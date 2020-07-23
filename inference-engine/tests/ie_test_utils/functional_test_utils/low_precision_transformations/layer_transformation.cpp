@@ -75,12 +75,8 @@ InferenceEngine::details::LayerTransformation::Params LayerTransformationParamsF
 ngraph::pass::low_precision::LayerTransformation::Params LayerTransformationParamsNGraphFactory::createParamsU8I8() {
     return ngraph::pass::low_precision::LayerTransformation::Params(
         true,
-        true,
-        true,
         ngraph::pass::low_precision::LayerTransformation::QuantizedTensorAlignment::None,
         ngraph::pass::low_precision::LayerTransformation::QuantizedTensorAlignment::None,
-        false,
-        true,
         true,
         { ngraph::element::u8 },
         { ngraph::element::i8 });
@@ -89,12 +85,8 @@ ngraph::pass::low_precision::LayerTransformation::Params LayerTransformationPara
 ngraph::pass::low_precision::LayerTransformation::Params LayerTransformationParamsNGraphFactory::createParamsI8I8() {
     return ngraph::pass::low_precision::LayerTransformation::Params(
         true,
-        true,
-        true,
         ngraph::pass::low_precision::LayerTransformation::QuantizedTensorAlignment::None,
         ngraph::pass::low_precision::LayerTransformation::QuantizedTensorAlignment::None,
-        false,
-        true,
         true,
         { ngraph::element::i8 },
         { ngraph::element::i8 });
@@ -121,7 +113,7 @@ void LayerTransformation::ConfigurePlugin(const LptVersion lptVersion) {
 }
 
 InferenceEngine::Blob::Ptr LayerTransformation::GenerateInput(
-    const InferenceEngine::Precision precision,
+    const ngraph::element::Type_t precision,
     const InferenceEngine::TensorDesc& tensorDesc,
     const float k) {
     const auto interval = getQuantizationInterval(precision);
@@ -168,6 +160,9 @@ void LayerTransformation::checkPrecisions(
     const bool asymmetricQuantizationOnData,
     const bool asymmetricQuantizationOnWeights) {
     EXPECT_EQ(expectedInputPrecisions.size(), layer.insData.size()) << "insert data count is no expected: " << layer.insData.size();
+    if (expectedInputPrecisions.size() != layer.insData.size()) {
+        return;
+    }
 
     const auto checkPrecision = [](
         const InferenceEngine::CNNLayer& layer,
@@ -211,8 +206,8 @@ void LayerTransformation::checkPrecisions(
 
 IE_SUPPRESS_DEPRECATED_END
 
-std::pair<float, float> LayerTransformation::getQuantizationInterval(const InferenceEngine::Precision precision) {
-    const bool unsignedInterval = precision == InferenceEngine::Precision::U8;
+std::pair<float, float> LayerTransformation::getQuantizationInterval(const ngraph::element::Type_t precision) {
+    const bool unsignedInterval = precision == ngraph::element::u8;
     const float low = unsignedInterval ? 0.f : -128.f;
     const float hight = unsignedInterval ? 255.f : 127.f;
     return std::make_pair(low, hight);
@@ -304,6 +299,12 @@ InferenceEngine::Precision toNGraph(const ngraph::element::Type precision) {
     case ngraph::element::Type_t::i8: {
         return InferenceEngine::Precision::I8;
     }
+    case ngraph::element::Type_t::f32: {
+        return InferenceEngine::Precision::FP32;
+    }
+    case ngraph::element::Type_t::f16: {
+        return InferenceEngine::Precision::FP16;
+    }
     default: {
         THROW_IE_EXCEPTION << "unknown precision " << precision;
     }
@@ -363,12 +364,8 @@ ngraph::pass::low_precision::LayerTransformation::Params LayerTransformation::to
     const auto precisionsOnWeights = LayerTestsUtils::toNGraph(params.precisionsOnWeights);
     return ngraph::pass::low_precision::LayerTransformation::Params(
         params.updatePrecisions,
-        params.quantizeOutputs,
-        params.weightsToConst,
         LayerTestsUtils::toNGraph(params.quantizedTensorAlignmentOnActivations),
         LayerTestsUtils::toNGraph(params.quantizedTensorAlignmentOnWeights),
-        params.roundQuantizedValues,
-        params.updateBiases,
         params.supportAsymmetricQuantization,
         precisionsOnActivations,
         precisionsOnWeights);
@@ -379,15 +376,35 @@ InferenceEngine::details::LayerTransformation::Params LayerTransformation::toCNN
     const auto precisionsOnWeights = LayerTestsUtils::toCNNNetwork(params.precisionsOnWeights);
     return InferenceEngine::details::LayerTransformation::Params(
         params.updatePrecisions,
-        params.quantizeOutputs,
-        params.weightsToConst,
+        true,
+        true,
         LayerTestsUtils::toCNNNetwork(params.quantizedTensorAlignmentOnActivations),
         LayerTestsUtils::toCNNNetwork(params.quantizedTensorAlignmentOnWeights),
-        params.roundQuantizedValues,
-        params.updateBiases,
+        true,
+        true,
         params.supportAsymmetricQuantization,
         precisionsOnActivations,
         precisionsOnWeights);
+}
+
+InferenceEngine::Precision LayerTransformation::toCNNNetwork(const ngraph::element::Type_t precision) {
+    switch (precision) {
+        case ngraph::element::Type_t::i8: {
+            return InferenceEngine::Precision::I8;
+        }
+        case ngraph::element::Type_t::u8: {
+            return InferenceEngine::Precision::U8;
+        }
+        case ngraph::element::Type_t::f16: {
+            return InferenceEngine::Precision::FP16;
+        }
+        case ngraph::element::Type_t::f32: {
+            return InferenceEngine::Precision::FP32;
+        }
+        default: {
+            THROW_IE_EXCEPTION << "not supported precision " << precision;
+        }
+    }
 }
 
 }  // namespace LayerTestsUtils

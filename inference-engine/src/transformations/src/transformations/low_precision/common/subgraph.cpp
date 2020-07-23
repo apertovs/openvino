@@ -5,15 +5,11 @@
 #include <transformations/low_precision/common/subgraph.hpp>
 
 #include <algorithm>
-#include <cmath>
-#include <limits>
-#include <map>
 #include <memory>
 #include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <cassert>
 
 #include <ngraph/rt_info.hpp>
 #include <ngraph/opsets/opset1.hpp>
@@ -21,33 +17,14 @@
 #include "transformations/low_precision/quantization_details.hpp"
 #include "transformations/low_precision/common/ie_lpt_exception.hpp"
 
-// #include <ie_common.h>
-// #include <precision_utils.h>
-// #include "cnn_network_impl.hpp"
-// #include "ie_util_internal.hpp"
-// #include "ie_parallel.hpp"
-
 namespace ngraph {
 namespace pass {
 namespace low_precision {
 
-// TODO: temporary commented : possible it doesn't need
-// static const std::unordered_set<std::string> intermediateLayers{
-//    "MaxPool",
-//    "Resample"
-// };
-
-// TODO: Resample is skipped
-bool isIntermediate(const ngraph::Node& node) {
-    return is_type<ngraph::opset1::MaxPool>(&node);
+Subgraph::Subgraph(ngraph::pass::ILayerTransformationsManager* layerTransformationsManager) : layerTransformationsManager(layerTransformationsManager) {
 }
 
 bool Subgraph::fillSubgraphForQuantization(ngraph::opset1::FakeQuantize& fakeQuantize, std::unordered_set<std::string>& handledLayers) {
-    // TODO: uncomment later
-    //if (!ngraph::pass::low_precision::QuantizationDetails::outputLayoutIsSupported(fakeQuantize)) {
-    //    return false;
-    //}
-
     quantizationLayers.push_back(&fakeQuantize);
     handledLayers.insert(fakeQuantize.get_friendly_name());
     layers.emplace(fakeQuantize.get_friendly_name(), &fakeQuantize);
@@ -68,15 +45,13 @@ bool Subgraph::fillSubgraphForQuantization(ngraph::opset1::FakeQuantize& fakeQua
             } else {
                 ngraph::opset1::FakeQuantize* fakeQuantizeChild = ngraph::as_type<ngraph::opset1::FakeQuantize>(&child);
                 if (fakeQuantizeChild != nullptr) {
-                //
+                    //
                 } else {
-                    return false;
-                    // TODO: possible not neccessary
-                    //if (intermediateLayers.find(child->type) != intermediateLayers.end()) {
-                    //    if (!fillSubgraphForIntermediate(child, handledLayers)) {
-                    //        return false;
-                    //    }
-                    //}
+                    if (layerTransformationsManager->isPrecisionPreserved(child.shared_from_this())) {
+                        if (!fillSubgraphForIntermediate(child, handledLayers)) {
+                            return false;
+                        }
+                    }
                 }
             }
         }
@@ -104,16 +79,13 @@ bool Subgraph::fill(ngraph::Node& layer, std::unordered_set<std::string>& handle
                     return false;
                 }
             } else {
-                // TODO: if we move Concat transformation from branch specific to original map then we can remove it
-                // TODO: temporary commented: possible it doesn't need
-                // if (intermediateLayers.find(parent->type) != intermediateLayers.end()) {
-                //    if (!fillSubgraphForIntermediate(parent, handledLayers)) {
-                //        return false;
-                //    }
-
-                // } else {
-                //    return false;
-                // }
+                if (layerTransformationsManager->isPrecisionPreserved(parent.shared_from_this())) {
+                    if (!fillSubgraphForIntermediate(parent, handledLayers)) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
             }
         }
     }
@@ -134,9 +106,9 @@ bool Subgraph::fill(ngraph::Node& layer, std::unordered_set<std::string>& handle
                 }
             } else {
                 ngraph::opset1::FakeQuantize* fakeQuantizeChild = ngraph::as_type<ngraph::opset1::FakeQuantize>(&child);
-                if (fakeQuantizeChild != nullptr) {
+                if (fakeQuantizeChild == nullptr) {
                     //
-                } else if (isIntermediate(child)) {
+                } else if (layerTransformationsManager->isPrecisionPreserved(child.shared_from_this())) {
                     if (!fillSubgraphForIntermediate(child, handledLayers)) {
                         return false;
                     }

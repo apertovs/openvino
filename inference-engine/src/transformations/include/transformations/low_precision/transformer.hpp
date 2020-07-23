@@ -29,8 +29,6 @@ public:
         const std::map<std::string, LayerTransformationPtr>& cleanupTransformations);
 
     void setUpdatePrecisions(const bool updatePrecisions);
-    void setQuantizeOutputs(const bool quantizeOutputs);
-    void setWeightsToConst(const bool weightsToConst);
     void setQuantizedTensorAlignmentOnActivations(const LayerTransformation::QuantizedTensorAlignment quantizedTensorAlignmentOnActivations);
     void setQuantizedTensorAlignmentOnWeights(const LayerTransformation::QuantizedTensorAlignment quantizedTensorAlignmentOnWeights);
     LowPrecisionTransformations& remove(const std::string& operationType);
@@ -147,21 +145,15 @@ public:
     LowPrecisionTransformer();
     LowPrecisionTransformer(const LowPrecisionTransformations& transformations);
     void transform(std::shared_ptr<Function> network);
-#if 0 // TODO LPT-TO-NGRAPH
-    void rename(std::shared_ptr<Function> network) const;
-#endif
 
     // IParamsManager interface implementation
     std::vector<element::Type> getPrecisionsOnActivations(const Node& op) const noexcept override;
 
     // ILayerTransformationsManager interface implementation
-    bool isQuantized(std::shared_ptr<Node> layer) const noexcept override;
-    bool isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept override;
+    bool isQuantized(const std::shared_ptr<Node>& layer) const noexcept override;
+    bool isPrecisionPreserved(const std::shared_ptr<Node>& layer) const noexcept override;
 
 private:
-#if 0 // TODO LPT-TO-NGRAPH
-    static void renameLayersByType(const std::vector<std::shared_ptr<Node>>& layers, const NodeTypeInfo& layerType);
-#endif
     LowPrecisionTransformations transformations;
 
     void registerAllMatchers(

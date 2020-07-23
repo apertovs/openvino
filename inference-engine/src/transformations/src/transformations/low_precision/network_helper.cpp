@@ -13,6 +13,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <queue>
 
 #include <ngraph/rt_info.hpp>
 #include <transformations/low_precision/common/ie_lpt_exception.hpp>
@@ -157,12 +158,17 @@ void NetworkHelper::removeLayer(std::shared_ptr<Node> layer) {
     ngraph::replace_output_update_name(layer->output(0), layer->input_value(0));
 }
 
-std::shared_ptr<opset1::Multiply> NetworkHelper::swapMultiplyAndAdd(std::shared_ptr<opset1::Add> addAfterMultiply) {
+std::shared_ptr<opset1::Multiply> NetworkHelper::swapMultiplyAndAdd(std::shared_ptr<Node> addAfterMultiply, const std::pair<int, int> multiplyBranch) {
+    // multiplyBranch.first - index of multiply branch
+    // multiplyBranch.second - index of activation branch on multiply branch
+    //
     // Multiply --> Add(addAfterMultiply)  ==>  Add(new) --> Multiply(new)
     // That means x*a + b ==> (x + b/a)*a; tries to fold b/a
-    auto x = addAfterMultiply->input_value(0).get_node()->input_value(0);
-    auto a = addAfterMultiply->input_value(0).get_node()->input_value(1);
-    auto b = addAfterMultiply->input_value(1);
+    const int constBranch = multiplyBranch.first == 0 ? 1 : 0;
+    const int multiplyConstBranch = multiplyBranch.second == 0 ? 1 : 0;
+    auto x = addAfterMultiply->input_value(multiplyBranch.first).get_node()->input_value(multiplyBranch.second);
+    auto a = addAfterMultiply->input_value(multiplyBranch.first).get_node()->input_value(multiplyConstBranch);
+    auto b = addAfterMultiply->input_value(constBranch);
     auto bDivA = std::make_shared<opset1::Divide>(b, a);
     OutputVector foldedTerm;
     if (bDivA->constant_fold(foldedTerm)) {
@@ -181,11 +187,14 @@ std::shared_ptr<opset1::Multiply> NetworkHelper::swapMultiplyAndAdd(std::shared_
     } else {
         foldedTerm = {bDivA->output(0)};
     }
-    op::AutoReplaceInputTypes<Node> auto_type(*addAfterMultiply->input_value(0).get_node(), addAfterMultiply->get_output_element_type(0));
+    op::AutoReplaceInputTypes<Node> auto_type(
+        *addAfterMultiply->input_value(multiplyBranch.first).get_node(),
+        addAfterMultiply->get_output_element_type(multiplyBranch.first));
     Output<Node> newMultiplyInput;
     if (!foldedTerm.empty()) {
-        auto newAdd = std::make_shared<op::TypeRelaxed<opset1::Add>>(opset1::Add(x, foldedTerm[0]),
-                                                                     addAfterMultiply->get_output_element_type(0));
+        auto newAdd = std::make_shared<op::TypeRelaxed<opset1::Add>>(
+            opset1::Add(x, foldedTerm[0]),
+            addAfterMultiply->get_output_element_type(multiplyBranch.first));
         newMultiplyInput = newAdd->output(0);
     } else {
         newMultiplyInput = x;
@@ -199,7 +208,7 @@ bool NetworkHelper::isScalarLike(std::shared_ptr<opset1::Constant> constant) {
     return constant->get_all_data_elements_bitwise_identical();
 }
 
-std::shared_ptr<opset1::Constant> NetworkHelper::distillToScalar(std::shared_ptr<opset1::Constant> constant) {
+std::shared_ptr<opset1::Constant> NetworkHelper::toScalar(std::shared_ptr<opset1::Constant> constant) {
     assert(isScalarLike(constant));
     return std::make_shared<opset1::Constant>(constant->get_element_type(), Shape{}, constant->get_data_ptr());
 }
@@ -302,7 +311,7 @@ std::tuple<std::shared_ptr<Node>, std::shared_ptr<Node>> NetworkHelper::decompos
     if (shift != nullptr) {
         std::shared_ptr<opset1::Constant> shiftConst = as_type_ptr<opset1::Constant>(shift);
         if (isScalarLike(shiftConst)) {
-            auto scalar = distillToScalar(shiftConst);
+            auto scalar = toScalar(shiftConst);
             if (op::util::constantIsEqualTo(scalar, 0)) {
                 shift = nullptr;
             }
@@ -371,7 +380,7 @@ std::shared_ptr<opset1::FakeQuantize> NetworkHelper::updateFakeQuantize(
     return newFQ;
 }
 
-FakeQuantizeDequantization NetworkHelper::createDequantization(
+FakeQuantizeDequantization NetworkHelper::makeDequantization(
     const float dequantizationScale,
     const float dequantizationShift,
     const ngraph::element::Type originalPrecision,
@@ -416,8 +425,9 @@ FakeQuantizeDequantization NetworkHelper::createDequantizationFromFakeQuantize(
     float max) {
     using std::make_shared;
 
-    auto newMin = make_shared<opset1::Constant>(fq->get_output_element_type(0), Shape{}, min);
-    auto newMax = make_shared<opset1::Constant>(fq->get_output_element_type(0), Shape{}, max);
+    const ngraph::element::Type_t fqPrecision = fq->get_output_element_type(0);
+    auto newMin = make_shared<opset1::Constant>(fqPrecision, Shape{}, min);
+    auto newMax = make_shared<opset1::Constant>(fqPrecision, Shape{}, max);
 
     auto outputLow = fq->input_value(3);
     auto outputHigh = fq->input_value(4);
@@ -428,20 +438,36 @@ FakeQuantizeDequantization NetworkHelper::createDequantizationFromFakeQuantize(
         fold<opset1::Subtract>(outputHigh, outputLow),
         fold<opset1::Subtract>(newMax, newMin));
 
-    const std::shared_ptr<Node> shift = fold<opset1::Divide>(
+    std::shared_ptr<Node> shift = fold<opset1::Divide>(
         fold<opset1::Subtract>(fold<opset1::Multiply>(newMin, outputHigh), fold<opset1::Multiply>(newMax, outputLow)),
         fold<opset1::Subtract>(outputHigh, outputLow));
+    Shape shiftShape = shift->get_output_shape(0);
 
-    // TODO: we create input here! we really need it here?
+    const opset1::Constant* shiftConstant = as_type<opset1::Constant>(shift.get());
+    if (shiftConstant->get_all_data_elements_bitwise_identical()) {
+        const std::vector<float> values = shiftConstant->cast_vector<float>();
+        if (values[0] == 0.0f) {
+            shift = nullptr;
+        }
+    }
+
     const auto input = std::make_shared<ngraph::opset1::Parameter>(precision, fq->get_output_shape(0));
-    std::shared_ptr<ngraph::opset1::Convert> convert =  as_type_ptr<ngraph::opset1::Convert>(fold<opset1::Convert>(input, fq->get_output_element_type(0)));
+    const std::shared_ptr<ngraph::opset1::Convert> convert =  as_type_ptr<ngraph::opset1::Convert>(fold<opset1::Convert>(
+        input,
+        fq->get_output_element_type(0)));
 
-    std::shared_ptr<ngraph::opset1::Subtract> sub = make_shared<ngraph::op::TypeRelaxed<ngraph::opset1::Subtract>>(convert, shift);
-    sub->set_output_type(0, fq->get_output_element_type(0), sub->get_output_partial_shape(0));
+    const std::shared_ptr<ngraph::opset1::Subtract> subtract = shift == nullptr ?
+        nullptr :
+        make_shared<ngraph::op::TypeRelaxed<ngraph::opset1::Subtract>>(convert, shift);
+    if (subtract != nullptr) {
+        subtract->set_output_type(0, fq->get_output_element_type(0), subtract->get_output_partial_shape(0));
+    }
 
-    std::shared_ptr<ngraph::opset1::Multiply> multiply = make_shared<ngraph::opset1::Multiply>(sub, scale);
+    const std::shared_ptr<ngraph::opset1::Multiply> multiply = make_shared<ngraph::opset1::Multiply>(
+        subtract == nullptr ? static_cast<std::shared_ptr<Node>>(convert) : subtract,
+        scale);
 
-    return FakeQuantizeDequantization(fq, convert, sub, multiply);
+    return FakeQuantizeDequantization(fq, convert, subtract, multiply);
 }
 
 FakeQuantizeDequantization NetworkHelper::getDequantization(const std::shared_ptr<Node> node, const size_t parentIndex) {
@@ -463,6 +489,75 @@ FakeQuantizeDequantization NetworkHelper::getDequantization(const std::shared_pt
     }
 
     return FakeQuantizeDequantization(dataNode, convert, subtract, multiply);
+}
+
+FakeQuantizeDequantizationValues NetworkHelper::createEmptyValues(const FakeQuantizeDequantization& dequantization) {
+    std::shared_ptr<Node> parent = dequantization.convert ? dequantization.convert : dequantization.data;
+
+    std::shared_ptr<Node> multiply1Const = dequantization.multiply ?
+        dequantization.multiply->get_input_node_shared_ptr(1)->clone_with_new_inputs({}) :
+        std::make_shared<opset1::Constant>(parent->get_output_element_type(0), Shape({}), std::vector<float>({ 1.f }));
+
+    std::shared_ptr<Node> subtract1Const = dequantization.subtract ?
+        dequantization.subtract->get_input_node_shared_ptr(1)->clone_with_new_inputs({}) :
+        std::make_shared<opset1::Constant>(parent->get_output_element_type(0), Shape({}), std::vector<float>({ 0.f }));
+
+    subtract1Const->set_output_type(0, multiply1Const->get_output_element_type(0), subtract1Const->get_output_partial_shape(0));
+
+    return FakeQuantizeDequantizationValues(subtract1Const, multiply1Const);
+}
+
+bool NetworkHelper::isZeroConst(const std::shared_ptr<Node>& node) {
+    std::shared_ptr<opset1::Constant> constant = as_type_ptr<opset1::Constant>(node);
+
+    if (constant == nullptr)
+        return false;
+
+    if (NetworkHelper::isScalarLike(constant)) {
+        auto scalar = NetworkHelper::toScalar(constant);
+        if (op::util::constantIsEqualTo(scalar, 0)) {
+            return true;
+        } else {
+            return false;
+        }
+    } else {
+        return false;
+    }
+}
+
+std::vector<std::shared_ptr<Node>> NetworkHelper::getChildrenRecursivelyExceptTypes(
+    const std::shared_ptr<Node>& layer,
+    const std::unordered_set<std::string>& exceptionLayerTypes) {
+    std::queue<std::shared_ptr<Node>> notHandledChildren;
+
+    for (const ngraph::descriptor::Output& output : layer->get_outputs()) {
+        for (const ngraph::descriptor::Input* input : output.get_inputs()) {
+            std::shared_ptr<Node> child = input->get_node();
+            notHandledChildren.emplace(child);
+        }
+    }
+
+    std::vector<std::shared_ptr<Node>> resultChildren;
+
+    while (!notHandledChildren.empty()) {
+        const std::shared_ptr<ngraph::Node> operation = notHandledChildren.front();
+        notHandledChildren.pop();
+
+        const std::string typeName = operation->get_type_name();
+        if (exceptionLayerTypes.find(typeName) == exceptionLayerTypes.end()) {
+            resultChildren.push_back(operation);
+            continue;
+        }
+
+        for (auto output : operation->get_outputs()) {
+            for (auto input : output.get_inputs()) {
+                std::shared_ptr<Node> child = input->get_node();
+                notHandledChildren.emplace(child);
+            }
+        }
+    }
+
+    return resultChildren;
 }
 
 std::shared_ptr<Node> NetworkHelper::optimizeSubtract(std::shared_ptr<opset1::Subtract> add) {
@@ -568,6 +663,19 @@ std::vector<Output<Node>> NetworkHelper::getInputs(const std::shared_ptr<ngraph:
         inputs[i] = node->get_input_node_shared_ptr(i);
     }
     return inputs;
+}
+
+std::shared_ptr<Node> NetworkHelper::toScalarIfPossible(std::shared_ptr<Node> node) {
+    std::shared_ptr<opset1::Constant> constant = as_type_ptr<opset1::Constant>(node);
+    if (constant == nullptr) {
+        return node;
+    }
+
+    if (!NetworkHelper::isScalarLike(constant)) {
+        return node;
+    }
+
+    return NetworkHelper::toScalar(constant);
 }
 
 }  // namespace low_precision

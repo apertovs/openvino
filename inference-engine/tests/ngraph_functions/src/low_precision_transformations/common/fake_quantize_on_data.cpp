@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include "ngraph_functions/low_precision_transformations/fake_quantize_function.hpp"
+#include "ngraph_functions/low_precision_transformations/common/fake_quantize_on_data.hpp"
 #include <ngraph/opsets/opset1.hpp>
 
 namespace ngraph {
@@ -17,13 +17,15 @@ FakeQuantizeOnData::FakeQuantizeOnData(
     const std::vector<float>& inputLowValues,
     const std::vector<float>& inputHighValues,
     const std::vector<float>& outputLowValues,
-    const std::vector<float>& outputHighValues) :
+    const std::vector<float>& outputHighValues,
+    const ngraph::element::Type outputPrecision) :
     quantizationLevel(quantizationLevel),
     constantShape(constantShape),
     inputLowValues(inputLowValues),
     inputHighValues(inputHighValues),
     outputLowValues(outputLowValues),
-    outputHighValues(outputHighValues)
+    outputHighValues(outputHighValues),
+    outputPrecision(outputPrecision)
 {}
 
 FakeQuantizeOnData::~FakeQuantizeOnData() {}

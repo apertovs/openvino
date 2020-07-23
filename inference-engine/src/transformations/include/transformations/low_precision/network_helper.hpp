@@ -60,11 +60,11 @@ public:
     // Remove node by connecting its 0th input with 0th output
     static void removeLayer(std::shared_ptr<Node> node);
 
-    static std::shared_ptr<opset1::Multiply> swapMultiplyAndAdd(std::shared_ptr<opset1::Add> addAfterMultiply);
+    static std::shared_ptr<opset1::Multiply> swapMultiplyAndAdd(std::shared_ptr<Node> addAfterMultiply, const std::pair<int, int> multiplyBranch);
 
     static bool isScalarLike(std::shared_ptr<opset1::Constant> constant);
 
-    static std::shared_ptr<opset1::Constant> distillToScalar(std::shared_ptr<opset1::Constant> constant);
+    static std::shared_ptr<opset1::Constant> toScalar(std::shared_ptr<opset1::Constant> constant);
 
     static std::shared_ptr<Node> getConstantInput(std::shared_ptr<Node> node);
 
@@ -87,7 +87,7 @@ public:
         float min,
         float max);
 
-    static FakeQuantizeDequantization createDequantization(
+    static FakeQuantizeDequantization makeDequantization(
         const float dequantizationScale,
         const float dequantizationShift,
         const ngraph::element::Type originalPrecision,
@@ -200,6 +200,16 @@ public:
     static size_t getInputIndex(const std::shared_ptr<ngraph::Node>& parent, const std::shared_ptr<ngraph::Node>& child);
 
     static std::vector<Output<Node>> getInputs(const std::shared_ptr<ngraph::Node>& node);
+
+    static FakeQuantizeDequantizationValues createEmptyValues(const FakeQuantizeDequantization& dequantization);
+
+    static bool isZeroConst(const std::shared_ptr<Node>& node);
+
+    static std::vector<std::shared_ptr<Node>> getChildrenRecursivelyExceptTypes(
+        const std::shared_ptr<Node>& layer,
+        const std::unordered_set<std::string>& exceptionLayerTypes = {});
+
+    static std::shared_ptr<Node> toScalarIfPossible(std::shared_ptr<Node> node);
 
 private:
     // 1  - on weights
