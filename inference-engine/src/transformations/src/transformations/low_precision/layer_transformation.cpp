@@ -491,15 +491,6 @@ std::shared_ptr<ngraph::Node> LayerTransformation::separateInStandaloneBranch(st
     return node;
 }
 
-void LayerTransformation::moveDequantizationAfter(
-    TransformationContext &context,
-    const std::shared_ptr<ngraph::Node>& operation,
-    const FakeQuantizeDequantization& dequantization,
-    const bool updatePrecision) const {
-    const auto result = ngraph::pass::low_precision::NetworkHelper::moveDequantizationAfter(operation, dequantization, updatePrecision);
-    updateOutput(context, result.lastDequantization, result.newOperation);
-}
-
 void LayerTransformation::updateOutput(
     TransformationContext &context,
     std::shared_ptr<ngraph::Node> lastNode,

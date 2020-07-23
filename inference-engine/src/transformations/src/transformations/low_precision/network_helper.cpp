@@ -545,46 +545,6 @@ void NetworkHelper::moveDequantization(
     replace_node(operation, newDequantization);
 }
 
-
-NetworkHelper::InsertDequantizationResult NetworkHelper::moveDequantizationAfter(
-    const std::shared_ptr<ngraph::Node>& operation,
-    const FakeQuantizeDequantization& dequantization,
-    const bool updatePrecision) {
-
-    std::vector<Output<Node>> inputs(operation->get_input_size());
-    for (size_t i = 0; i < operation->get_input_size(); ++i) {
-        inputs[i] = operation->get_input_node_shared_ptr(i);
-    }
-
-    const size_t dequantizationIndex = getInputIndex(dequantization.multiply, operation);
-    inputs[dequantizationIndex] = dequantization.data;
-
-    std::shared_ptr<ngraph::Node> newOperation = operation->copy_with_new_inputs(inputs);
-    newOperation->set_friendly_name(operation->get_friendly_name());
-
-    const std::shared_ptr<ngraph::opset1::Convert> convert = updatePrecision ? dequantization.convert : nullptr;
-
-    std::shared_ptr<opset1::Multiply> replacement = as_type_ptr<opset1::Multiply>(dequantization.multiply->copy_with_new_inputs({
-        dequantization.subtract ?
-            (convert ?
-                dequantization.subtract->copy_with_new_inputs({
-                    convert->copy_with_new_inputs({ newOperation }),
-                    dequantization.subtract->get_input_node_shared_ptr(1)->clone_with_new_inputs({}) }) :
-                dequantization.subtract->copy_with_new_inputs({
-                    newOperation,
-                    dequantization.subtract->get_input_node_shared_ptr(1)->clone_with_new_inputs({}) })) :
-            (convert ? convert->copy_with_new_inputs({ newOperation }) : newOperation),
-        dequantization.multiply->get_input_node_shared_ptr(1)->clone_with_new_inputs({}) }));
-
-    replace_node(operation, replacement);
-
-    if (updatePrecision) {
-        NetworkHelper::setOutDataPrecision(newOperation, newOperation->get_input_element_type(0));
-    }
-
-    return InsertDequantizationResult(newOperation, replacement);
-}
-
 size_t NetworkHelper::getInputIndex(const std::shared_ptr<ngraph::Node>& parent, const std::shared_ptr<ngraph::Node>& child) {
     bool inputIndexWasFound = false;
     size_t inputIndex;
