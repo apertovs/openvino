@@ -20,19 +20,19 @@
 namespace LayerTestsDefinitions {
 
 std::string MatMulTransformation::getTestCaseName(testing::TestParamInfo<MatMulTransformationParams> obj) {
-    InferenceEngine::Precision netPrecision;
-    InferenceEngine::SizeVector inputShapes;
+    ngraph::element::Type precision;
+    ngraph::Shape inputShape;
     std::string targetDevice;
-    InferenceEngine::details::LayerTransformation::Params params;
     LayerTestsUtils::LayerTransformation::LptVersion version;
     MatMulTransformationTestValues testValues;
-    std::tie(netPrecision, inputShapes, targetDevice, params, version, testValues) = obj.param;
+    std::tie(precision, inputShape, targetDevice, version, testValues) = obj.param;
 
     std::ostringstream result;
     result << version << "_" <<
-        netPrecision.name() << "_" <<
+        precision << "_" <<
         targetDevice << "_" <<
-        toString(params);
+        testValues.fqOnData1 << "_" <<
+        testValues.fqOnData2;
 
     return result.str();
 }
@@ -46,10 +46,10 @@ InferenceEngine::Blob::Ptr MatMulTransformation::GenerateInput(const InferenceEn
     size_t high;
     if (info.name() == "input1") {
         low = 1ul;
-        high = 10ul;
+        high = 5ul;
     } else if (info.name() == "input2") {
-        low = 10ul;
-        high = 20ul;
+        low = 5ul;
+        high = 10ul;
     } else {
         THROW_IE_EXCEPTION << "unexpected input name " << info.name();
     }
@@ -58,18 +58,16 @@ InferenceEngine::Blob::Ptr MatMulTransformation::GenerateInput(const InferenceEn
 }
 
 void MatMulTransformation::SetUp() {
-    InferenceEngine::SizeVector inputShape;
-    InferenceEngine::Precision netPrecision;
-    InferenceEngine::details::LayerTransformation::Params params;
+    ngraph::element::Type precision;
+    ngraph::Shape inputShape;
     LayerTestsUtils::LayerTransformation::LptVersion version;
     MatMulTransformationTestValues testValues;
-    std::tie(netPrecision, inputShape, targetDevice, params, version, testValues) = this->GetParam();
+    std::tie(precision, inputShape, targetDevice, version, testValues) = this->GetParam();
 
     ConfigurePlugin(version);
 
-    const auto ngPrecision = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
     function = ngraph::builder::subgraph::MatMulFunction::getOriginal(
-        ngPrecision,
+        precision,
         testValues.inputShape1,
         testValues.fqOnData1,
         testValues.inputShape2,
@@ -83,12 +81,11 @@ void MatMulTransformation::SetUp() {
 }
 
 void MatMulTransformation::validate() {
-    InferenceEngine::SizeVector inputShape;
-    InferenceEngine::Precision netPrecision;
-    InferenceEngine::details::LayerTransformation::Params params;
+    ngraph::element::Type precision;
+    ngraph::Shape inputShape;
     LayerTestsUtils::LayerTransformation::LptVersion version;
     MatMulTransformationTestValues testValues;
-    std::tie(netPrecision, inputShape, targetDevice, params, version, testValues) = this->GetParam();
+    std::tie(precision, inputShape, targetDevice, version, testValues) = this->GetParam();
 
     {
         InferenceEngine::CNNNetwork net(function);
@@ -98,6 +95,7 @@ void MatMulTransformation::validate() {
         }
     }
 
+    const auto params = LayerTestsUtils::LayerTransformationParamsFactory::createParams();
     const InferenceEngine::CNNNetwork network = transform(params);
 
     IE_SUPPRESS_DEPRECATED_START
@@ -109,12 +107,6 @@ void MatMulTransformation::validate() {
     const InferenceEngine::CNNLayerPtr outputLayer = getCreatorLayer(it->second).lock();
     EXPECT_TRUE(outputLayer != nullptr);
 
-    // const std::vector<std::shared_ptr<ngraph::op::Parameter>> inputs = ngraph::builder::subgraph::MatMulFunction::getInputs(nodes);
-    // if ((inputs.size() == 2ul) && (params.precisionsOnActivations[0] == InferenceEngine::Precision::U8)) {
-    //    // TODO: not completed
-    //    return;
-    // }
-
     EXPECT_EQ("ScaleShift", outputLayer->type);
 
     EXPECT_EQ(1ul, outputLayer->insData.size());
@@ -124,38 +116,17 @@ void MatMulTransformation::validate() {
     EXPECT_TRUE(layer != nullptr);
 
     const std::vector<std::shared_ptr<ngraph::op::Parameter>> parameters = function->get_parameters();
-    if (parameters.size() == 2ul) {
-        EXPECT_EQ("Gemm", layer->type);
+    ASSERT_EQ(2ul, parameters.size());
+    EXPECT_EQ("Gemm", layer->type);
 
-        if (params.updatePrecisions) {
-            const std::vector<InferenceEngine::CNNLayerPtr> parents = InferenceEngine::details::CNNNetworkHelper::getParents(*layer);
-            EXPECT_EQ(2, parents.size());
+    if (params.updatePrecisions) {
+        const std::vector<InferenceEngine::CNNLayerPtr> parents = InferenceEngine::details::CNNNetworkHelper::getParents(*layer);
+        EXPECT_EQ(2, parents.size());
 
-            EXPECT_EQ(params.precisionsOnActivations[0], parents[0]->outData[0]->getTensorDesc().getPrecision());
-            EXPECT_EQ(params.precisionsOnWeights[0], parents[1]->outData[0]->getTensorDesc().getPrecision());
-        }
-    } else {
-        EXPECT_EQ("FullyConnected", layer->type);
-
-        if (params.updatePrecisions) {
-            const std::vector<InferenceEngine::CNNLayerPtr> parents = InferenceEngine::details::CNNNetworkHelper::getParents(*layer);
-            EXPECT_EQ(3, parents.size());
-
-            InferenceEngine::CNNLayerPtr fakeQuantizeOnActivations;
-            if (parents[0]->type == "FakeQuantize") {
-                fakeQuantizeOnActivations = parents[0];
-            } else {
-                EXPECT_EQ("Eltwise", parents[0]->type) << "unexpected layer type " << parents[0]->type << " " << parents[0]->name;
-                const InferenceEngine::CNNLayerPtr parent = InferenceEngine::details::CNNNetworkHelper::getParent(*parents[0]);
-                EXPECT_EQ("FakeQuantize", parent->type) << "unexpected layer type " << parents[0]->type << " " << parents[0]->name;
-                fakeQuantizeOnActivations = parent;
-            }
-            EXPECT_EQ(params.precisionsOnActivations[0], fakeQuantizeOnActivations->outData[0]->getTensorDesc().getPrecision());
-            EXPECT_EQ(params.precisionsOnWeights[0], parents[1]->outData[0]->getTensorDesc().getPrecision());
-            if (parents.size() > 2ul) {
-                EXPECT_EQ(InferenceEngine::Precision::FP32, parents[2]->outData[0]->getTensorDesc().getPrecision());
-            }
-        }
+        EXPECT_TRUE(
+            (params.precisionsOnActivations[0] == parents[0]->outData[0]->getTensorDesc().getPrecision()) ||
+            (params.precisionsOnActivations[1] == parents[0]->outData[0]->getTensorDesc().getPrecision()));
+        EXPECT_EQ(params.precisionsOnWeights[0], parents[1]->outData[0]->getTensorDesc().getPrecision());
     }
 
     IE_SUPPRESS_DEPRECATED_END

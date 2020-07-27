@@ -17,11 +17,12 @@ std::shared_ptr<Node> makeDequantization(
     const std::shared_ptr<ngraph::Node> data,
     const DequantizationOperations& dequantizationOperations);
 
-std::shared_ptr<Node> makeFakeQuantize(
+std::shared_ptr<ngraph::opset1::FakeQuantize> makeFakeQuantize(
     const std::shared_ptr<ngraph::Node>& input,
     const ngraph::element::Type precision,
     const FakeQuantizeOnData& fqOnData);
 
+// TODO: refactor
 std::shared_ptr<Node> makeFakeQuantizeTypeRelaxed(
     const std::shared_ptr<ngraph::Node>& input,
     const ngraph::element::Type precision,

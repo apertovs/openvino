@@ -10,13 +10,9 @@ using namespace LayerTestsDefinitions;
 using namespace InferenceEngine::details;
 
 namespace {
-const std::vector<InferenceEngine::Precision> netPrecisions = {
-    InferenceEngine::Precision::FP32,
-    // InferenceEngine::Precision::FP16
-};
-
-const std::vector<LayerTransformation::Params> trasformationParamValues = {
-    LayerTestsUtils::LayerTransformationParamsFactory::createParams()
+const std::vector<ngraph::element::Type> precisions = {
+    ngraph::element::f32,
+    // ngraph::element::f16
 };
 
 const std::vector<LayerTestsUtils::LayerTransformation::LptVersion> versionValues = {
@@ -26,19 +22,24 @@ const std::vector<LayerTestsUtils::LayerTransformation::LptVersion> versionValue
 
 std::vector<MatMulTransformationTestValues> testValues = {
     {
-        { 1, 16, 384, 64 },
+        { 1, 4, 12, 2 },
         { 256ul, ngraph::Shape({}), {0.f}, {25.5f}, {0.f}, {25.5f} },
-        { 1, 16, 64, 384 },
+        { 1, 4, 2, 12 },
+        { 256ul, ngraph::Shape({}), {-12.8f}, {12.7f}, {-12.8f}, {12.7f} }
+    },
+    {
+        { 1, 4, 12, 2 },
+        { 256ul, ngraph::Shape({}), {-12.8f}, {12.7f}, {-12.8f}, {12.7f} },
+        { 1, 4, 2, 12 },
         { 256ul, ngraph::Shape({}), {-12.8f}, {12.7f}, {-12.8f}, {12.7f} }
     }
 };
 
 INSTANTIATE_TEST_CASE_P(LPT, MatMulTransformation,
     ::testing::Combine(
-        ::testing::ValuesIn(netPrecisions),
+        ::testing::ValuesIn(precisions),
         ::testing::Values(InferenceEngine::SizeVector({ 1, 384, 1024 })),
         ::testing::Values(CommonTestUtils::DEVICE_GPU),
-        ::testing::ValuesIn(trasformationParamValues),
         ::testing::ValuesIn(versionValues),
         ::testing::ValuesIn(testValues)),
     MatMulTransformation::getTestCaseName);

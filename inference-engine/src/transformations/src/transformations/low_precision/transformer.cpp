@@ -21,6 +21,7 @@
 
 #include "transformations/low_precision/add.hpp"
 #include "transformations/low_precision/avg_pool.hpp"
+#include "transformations/low_precision/clamp.hpp"
 #include "transformations/low_precision/concat.hpp"
 #include "transformations/low_precision/concat_multi_channels.hpp"
 #include "transformations/low_precision/convert.hpp"
@@ -159,13 +160,16 @@ LowPrecisionTransformations LowPrecisionTransformer::getAllTransformations(const
 
         add<AddTransformation, opset1::Add>(params).
         add<AvgPoolTransformation, opset1::AvgPool>(params).
+        add<ClampTransformation, opset1::Clamp>(params).
         add<ConvolutionTransformation, opset1::Convolution>(params).
+        add<DepthToSpaceTransformation, opset1::DepthToSpace>(params).
         add<FakeQuantizeTransformation, opset1::FakeQuantize>(params).
         add<GroupConvolutionTransformation, opset1::GroupConvolution>(params).
         add<MatMulTransformation, opset1::MatMul>(params).
         add<MaxPoolTransformation, opset1::MaxPool>(params).
         add<MultiplyTransformation, opset1::Multiply>(params).
         add<NormalizeL2Transformation, opset1::NormalizeL2>(params).
+        add<ReshapeTransformation, opset1::Reshape>(params).
         add<ReluTransformation, opset1::Relu>(params).
         add<SqueezeTransformation, opset1::Relu>(params).
 
@@ -196,7 +200,6 @@ void make_matcher_type_relaxed(ngraph::pass::GraphRewrite* transformation) {
         // std::cerr << "My matcher pass was triggered: " << l_node->get_friendly_name() << " with " << l_node->get_inputs().size() << " inputs\n";
         // TODO: replaces only operation with one output port
         auto replacement = std::make_shared<ngraph::op::TypeRelaxed<BaseOp>>(*l_node, l_node->get_output_element_type(0));
-        // auto replacement = std::make_shared<BaseOp>(*l_node);
         copy_runtime_info(l_node, replacement);
         replace_node(l_node, replacement);
         return true;
@@ -209,15 +212,17 @@ void make_matcher_type_relaxed(ngraph::pass::GraphRewrite* transformation) {
 TypeRelaxedReplacer::TypeRelaxedReplacer() {
     // List all operations that support polymorphic inputs/outputs
     make_matcher_type_relaxed<opset1::AvgPool>(this);
+    make_matcher_type_relaxed<opset1::Clamp>(this);
     make_matcher_type_relaxed<opset1::Concat>(this);
     make_matcher_type_relaxed<opset1::Convolution>(this);
+    make_matcher_type_relaxed<opset1::DepthToSpace>(this);
     make_matcher_type_relaxed<opset1::FakeQuantize>(this);
     make_matcher_type_relaxed<opset1::GroupConvolution>(this);
     make_matcher_type_relaxed<opset1::Relu>(this);
+    make_matcher_type_relaxed<opset1::Reshape>(this);
     make_matcher_type_relaxed<opset1::MaxPool>(this);
     make_matcher_type_relaxed<opset1::Add>(this);
     make_matcher_type_relaxed<opset1::Subtract>(this);
-    make_matcher_type_relaxed<ngraph::op::Subtract>(this);
     make_matcher_type_relaxed<opset1::NormalizeL2>(this);
     make_matcher_type_relaxed<opset1::Multiply>(this);
     //make_matcher_type_relaxed<opset1::Squeeze>(this);

@@ -44,7 +44,7 @@ public:
     static bool onWeights(std::shared_ptr<Node> layer);
 
     template <typename OperationType>
-    static void setOutDataPrecision(std::shared_ptr<OperationType>, const element::Type& precision);
+    static std::shared_ptr<Node> setOutDataPrecision(std::shared_ptr<OperationType>, const element::Type& precision);
 
     static size_t getOutputChannelsCount(std::shared_ptr<const Node> layer, bool isOnWeights = false);
 
@@ -60,7 +60,7 @@ public:
     // Remove node by connecting its 0th input with 0th output
     static void removeLayer(std::shared_ptr<Node> node);
 
-    static std::shared_ptr<opset1::Multiply> swapMultiplyAndAdd(std::shared_ptr<Node> addAfterMultiply, const std::pair<int, int> multiplyBranch);
+    static std::shared_ptr<Node> swapMultiplyAndAdd(std::shared_ptr<Node> addAfterMultiply, const int multiplyBranch);
 
     static bool isScalarLike(std::shared_ptr<opset1::Constant> constant);
 
@@ -127,6 +127,17 @@ public:
         const FakeQuantizeDequantization& dequantization,
         const bool updatePrecision);
 
+    static InsertDequantizationResult moveMultiplyAfter(
+        const std::shared_ptr<ngraph::Node>& operation,
+        const FakeQuantizeDequantization& dequantization,
+        const bool removeConvert);
+
+    static void removeConvertIfPossible(
+        const std::shared_ptr<ngraph::Node>& operation,
+        const FakeQuantizeDequantization& dequantization);
+
+    static bool checkConstantValuePrecision(const element::Type expectedPrecision, const std::shared_ptr<Node>& constant);
+
     static size_t getInputIndex(const std::shared_ptr<ngraph::Node>& parent, const std::shared_ptr<ngraph::Node>& child);
 
     static std::vector<Output<Node>> getInputs(const std::shared_ptr<ngraph::Node>& node);
@@ -149,11 +160,12 @@ private:
 };
 
 template <typename OperationType>
-void NetworkHelper::setOutDataPrecision(std::shared_ptr<OperationType> layer, const element::Type& precision) {
+std::shared_ptr<Node> NetworkHelper::setOutDataPrecision(std::shared_ptr<OperationType> layer, const element::Type& precision) {
     // check if it already exteded operation node
     if (auto relaxed_layer = std::dynamic_pointer_cast<ngraph::op::TypeRelaxedBase>(layer)) {
         relaxed_layer->set_overriden_output_type(precision);
         std::dynamic_pointer_cast<ngraph::Node>(layer)->validate_and_infer_types();
+        return layer;
     } else {
         // TODO: Make such replacements in advance for all supported polymorphic layer types
         // extend a node with new semantics: overriden output data_type
@@ -161,6 +173,7 @@ void NetworkHelper::setOutDataPrecision(std::shared_ptr<OperationType> layer, co
         auto replacement = std::make_shared<ngraph::op::TypeRelaxed<OperationType>>(*layer, precision);
         copy_runtime_info(layer, replacement);
         replace_node(layer, replacement);
+        return replacement;
     }
 }
 
