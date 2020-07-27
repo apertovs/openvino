@@ -657,6 +657,45 @@ size_t NetworkHelper::getInputIndex(const std::shared_ptr<ngraph::Node>& parent,
     return inputIndex;
 }
 
+NetworkHelper::InsertDequantizationResult NetworkHelper::moveDequantizationAfter(
+    const std::shared_ptr<ngraph::Node>& operation,
+    const FakeQuantizeDequantization& dequantization,
+    const bool updatePrecision) {
+
+    std::vector<Output<Node>> inputs(operation->get_input_size());
+    for (size_t i = 0; i < operation->get_input_size(); ++i) {
+        inputs[i] = operation->get_input_node_shared_ptr(i);
+    }
+
+    const size_t dequantizationIndex = getInputIndex(dequantization.multiply, operation);
+    inputs[dequantizationIndex] = dequantization.data;
+
+    std::shared_ptr<ngraph::Node> newOperation = operation->clone_with_new_inputs(inputs);
+    newOperation->set_friendly_name(operation->get_friendly_name());
+
+    const std::shared_ptr<ngraph::opset1::Convert> convert = updatePrecision ? dequantization.convert : nullptr;
+
+    auto parent = newOperation;
+    if (convert != nullptr) {
+        parent = std::make_shared<opset1::Convert>(parent, convert->get_output_element_type(0));
+    }
+    if (dequantization.subtract != nullptr) {
+        auto subtractConstant = dequantization.subtract->get_input_node_shared_ptr(1);
+        parent = std::make_shared<opset1::Subtract>(parent, subtractConstant);
+    }
+    if (dequantization.multiply != nullptr) {
+        auto multiplyConstant = dequantization.multiply->get_input_node_shared_ptr(1);
+        parent = std::make_shared<opset1::Multiply>(parent, multiplyConstant);
+    }
+    replace_node(operation, parent);
+
+    if (updatePrecision) {
+        NetworkHelper::setOutDataPrecision(newOperation, newOperation->get_input_element_type(0));
+    }
+
+    return InsertDequantizationResult(newOperation, parent);
+}
+
 std::vector<Output<Node>> NetworkHelper::getInputs(const std::shared_ptr<ngraph::Node>& node) {
     std::vector<Output<Node>> inputs(node->get_input_size());
     for (size_t i = 0; i < node->get_input_size(); ++i) {

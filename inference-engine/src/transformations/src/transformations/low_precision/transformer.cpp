@@ -36,6 +36,7 @@
 #include "transformations/low_precision/reshape.hpp"
 #include "transformations/low_precision/relu.hpp"
 #include "transformations/low_precision/subtract.hpp"
+#include "transformations/low_precision/squeeze.hpp"
 
 // uncomment to display precision info during low precision transformations
 // #define DISPLAY_PECISION
@@ -166,6 +167,8 @@ LowPrecisionTransformations LowPrecisionTransformer::getAllTransformations(const
         add<MultiplyTransformation, opset1::Multiply>(params).
         add<NormalizeL2Transformation, opset1::NormalizeL2>(params).
         add<ReluTransformation, opset1::Relu>(params).
+        add<SqueezeTransformation, opset1::Relu>(params).
+
 
         addCleanup<FuseFakeQuantizeTransformation, opset1::FakeQuantize>(params).
         // workaround: Convert I8 -> FP32 is not supported by CPU plugin
@@ -217,6 +220,8 @@ TypeRelaxedReplacer::TypeRelaxedReplacer() {
     make_matcher_type_relaxed<ngraph::op::Subtract>(this);
     make_matcher_type_relaxed<opset1::NormalizeL2>(this);
     make_matcher_type_relaxed<opset1::Multiply>(this);
+    //make_matcher_type_relaxed<opset1::Squeeze>(this);
+
 }
 
 LowPrecisionTransformer::LowPrecisionTransformer(const LowPrecisionTransformations& transformations)

@@ -122,80 +122,10 @@ public:
         std::shared_ptr<Node> lastDequantization;
     };
 
-    template<class Operation>
-    static std::shared_ptr<ngraph::Node> MyFold(const std::shared_ptr<ngraph::Node>& operation, const std::shared_ptr<Node> new_tensor) {
-        auto input = operation->input_values();
-        input[0] = new_tensor;
-        auto newOp = operation->clone_with_new_inputs(input);
-        OutputVector foldResult;
-        newOp->constant_fold(foldResult);
-        return foldResult[0].get_node_shared_ptr();
-    }
-
-    template <class Operation = ngraph::Node>
     static InsertDequantizationResult moveDequantizationAfter(
-            const std::shared_ptr<ngraph::Node>& operation,
-            const FakeQuantizeDequantization& dequantization,
-            const bool updatePrecision) {
-
-        if (as_type_ptr<Operation>(operation) == nullptr) {
-            // THROW_IE_LPT_EXCEPTION << "operation template parameter is invalid";
-        }
-
-        bool isFused = static_cast<bool>(std::dynamic_pointer_cast<ngraph::op::util::FusedOp>(operation) != nullptr);
-
-        std::vector<Output<Node>> inputs(operation->get_input_size());
-        for (size_t i = 0; i < operation->get_input_size(); ++i) {
-            inputs[i] = operation->get_input_node_shared_ptr(i);
-        }
-
-        const size_t dequantizationIndex = getInputIndex(dequantization.multiply, operation);
-        inputs[dequantizationIndex] = dequantization.data;
-
-        std::shared_ptr<ngraph::Node> newOperation = operation->clone_with_new_inputs(inputs);
-        newOperation->set_friendly_name(operation->get_friendly_name());
-
-        const std::shared_ptr<ngraph::opset1::Convert> convert = updatePrecision ? dequantization.convert : nullptr;
-
-        auto parent = newOperation;
-        if (convert != nullptr) {
-            parent = convert->clone_with_new_inputs({ parent });
-        }
-        if (dequantization.subtract != nullptr) {
-            auto subtractConstant = dequantization.subtract->get_input_node_shared_ptr(1);
-            if (isFused) {
-                subtractConstant = MyFold<Operation>(operation, subtractConstant);
-            }
-            parent = std::make_shared<opset1::Subtract>(parent, subtractConstant);
-        }
-        if (dequantization.multiply != nullptr) {
-            auto multiplyConstant = dequantization.multiply->get_input_node_shared_ptr(1);
-            if (isFused) {
-                multiplyConstant = MyFold<Operation>(operation, multiplyConstant);
-            }
-            parent = std::make_shared<opset1::Multiply>(parent, multiplyConstant);
-        }
-
-        //std::shared_ptr<opset1::Multiply> replacement = std::make_shared<opset1::Multiply>(
-        //    dequantization.subtract ?
-        //    (convert ?
-        //        std::make_shared<opset1::Subtract>(
-        //            convert->clone_with_new_inputs({ newOperation }),
-        //            dequantization.subtract->get_input_node_shared_ptr(1)) :
-        //        std::make_shared<opset1::Subtract>(
-        //            newOperation,
-        //            dequantization.subtract->get_input_node_shared_ptr(1))) :
-        //            (convert ? convert->clone_with_new_inputs({ newOperation }) : newOperation),
-        //    dequantization.multiply->get_input_node_shared_ptr(1));
-
-        replace_node(operation, parent);
-
-        if (updatePrecision) {
-            NetworkHelper::setOutDataPrecision(newOperation, newOperation->get_input_element_type(0));
-        }
-
-        return InsertDequantizationResult(newOperation, parent);
-    }
+        const std::shared_ptr<ngraph::Node>& operation,
+        const FakeQuantizeDequantization& dequantization,
+        const bool updatePrecision);
 
     static size_t getInputIndex(const std::shared_ptr<ngraph::Node>& parent, const std::shared_ptr<ngraph::Node>& child);
 

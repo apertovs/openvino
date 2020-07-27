@@ -308,16 +308,11 @@ protected:
 protected:
     std::shared_ptr<ngraph::Node> separateInStandaloneBranch(std::shared_ptr<ngraph::Node> node) const;
 
-    template <class Operation>
-    void moveDequantizationAfter(
+    std::shared_ptr<ngraph::Node> moveDequantizationAfter(
         TransformationContext &context,
         const std::shared_ptr<ngraph::Node>& operation,
         const FakeQuantizeDequantization& dequantization,
-        const bool updatePrecision) const {
-        const auto result = ngraph::pass::low_precision::NetworkHelper::moveDequantizationAfter<Operation>(operation, dequantization, updatePrecision);
-
-        updateOutput(context, result.lastDequantization, result.newOperation);
-    }
+        const bool updatePrecision) const;
 
     void updateOutput(
         TransformationContext &context,

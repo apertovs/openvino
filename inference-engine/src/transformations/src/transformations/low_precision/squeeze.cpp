@@ -28,28 +28,37 @@ void SqueezeTransformation::registerMatcherIn(GraphRewrite &pass, Transformation
         make_op_pattern<opset1::Squeeze>({ make_op_label<opset1::Multiply>() }));
 }
 
+static std::shared_ptr<ngraph::Node> MyFold(const std::shared_ptr<Node>& operation, const std::shared_ptr<Node>& newConstant) {
+    auto input = operation->input_values();
+    input[0] = newConstant;
+    auto newOp = operation->clone_with_new_inputs(input);
+    OutputVector foldResult;
+    newOp->constant_fold(foldResult);
+    return foldResult[0].get_node_shared_ptr();
+}
+
 void SqueezeTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
     if (!LayerTransformation::canBeTransformed(context, m.get_match_root())) {
         return;
     }
-
     const std::shared_ptr<Node> squeeze = separateInStandaloneBranch(m.get_match_root());
     FakeQuantizeDequantization dequantization = NetworkHelper::getDequantization(squeeze);
-    //if (dequantization.multiply != nullptr) {
-    //    auto fold_result = fold<opset1::Squeeze>(dequantization.multiply, squeeze->get_argument(1));
-    //    dequantization.multiply = as_type_ptr<ngraph::op::v1::Multiply>(fold_result);
-    //}
+    std::shared_ptr<ngraph::Node> multiplyConstantNode = dequantization.multiply->get_argument(1);
+    if (dequantization.multiply != nullptr && multiplyConstantNode->get_shape() == dequantization.data->get_shape()
+        && multiplyConstantNode->get_shape().size() > 1) {
+        auto newConstant = MyFold(squeeze, multiplyConstantNode);
+        dequantization.multiply->set_argument(1, newConstant);
+    }
+    std::shared_ptr<ngraph::Node> subtractConstantNode = dequantization.subtract->get_argument(1);
 
-    //if (dequantization.subtract != nullptr) {
-    //    auto fold_result = fold<opset1::Squeeze>(dequantization.subtract, squeeze->get_argument(1));
-    //    dequantization.subtract = as_type_ptr<ngraph::op::v1::Subtract>(fold_result);
-    //}
+    if (dequantization.subtract != nullptr && subtractConstantNode->get_shape() == dequantization.data->get_shape()
+        && subtractConstantNode->get_shape().size() > 1) {
+        auto newConstant = MyFold(squeeze, subtractConstantNode);
+        dequantization.subtract->set_argument(1, newConstant);
 
-    //if (dequantization.convert != nullptr) {
-    //    auto fold_result = fold<opset1::Squeeze>(dequantization.convert, squeeze->get_argument(1));
-    //    dequantization.convert = as_type_ptr<ngraph::op::v0::Convert>(fold_result);
-    //}
-    moveDequantizationAfter<opset1::Squeeze>(context, squeeze, dequantization, false);
+    }
+
+    moveDequantizationAfter(context, squeeze, dequantization, true);
 }
 
 //bool SqueezeTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept {
