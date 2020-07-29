@@ -652,8 +652,8 @@ NetworkHelper::InsertDequantizationResult NetworkHelper::moveDequantizationAfter
 
     std::shared_ptr<ngraph::Node> newOperation = operation->clone_with_new_inputs(inputs);
     newOperation->set_friendly_name(operation->get_friendly_name());
-
-    const std::shared_ptr<ngraph::opset1::Convert> convert = updatePrecision ? dequantization.convert : nullptr;
+    bool shouldConvert = (newOperation->get_output_element_type(0) != dequantization.multiply->get_output_element_type(0));
+    const std::shared_ptr<ngraph::opset1::Convert> convert = (updatePrecision || shouldConvert) ? dequantization.convert : nullptr;
 
     auto parent = newOperation;
     if (convert != nullptr) {
