@@ -117,9 +117,8 @@ const std::vector<SqueezeTransformationTestValues> testValues = {
     subtractActual(@values, @shape);
     subtractExpected(@values, @shape);
     squeezeArgs;
-    shapeBefore;
-    shapeAfter
-    precision
+    inputShape;
+    precision;
     */
 
     {

@@ -130,9 +130,8 @@ const std::vector<UnsqueezeTransformationTestValues> testValues = {
     subtractActual(@values, @shape);
     subtractExpected(@values, @shape);
     unsqueezeArgs;
-    shapeBefore;
-    shapeAfter
-    precision
+    inputShape;
+    precision;
     */
 
     {
