@@ -38,6 +38,8 @@
 #include "transformations/low_precision/relu.hpp"
 #include "transformations/low_precision/subtract.hpp"
 #include "transformations/low_precision/squeeze.hpp"
+#include "transformations/low_precision/unsqueeze.hpp"
+
 
 // uncomment to display precision info during low precision transformations
 // #define DISPLAY_PECISION
@@ -171,8 +173,8 @@ LowPrecisionTransformations LowPrecisionTransformer::getAllTransformations(const
         add<NormalizeL2Transformation, opset1::NormalizeL2>(params).
         add<ReshapeTransformation, opset1::Reshape>(params).
         add<ReluTransformation, opset1::Relu>(params).
-        add<SqueezeTransformation, opset1::Relu>(params).
-
+        add<SqueezeTransformation, opset1::Squeeze>(params).
+        add<UnsqueezeTransformation, opset1::Unsqueeze>(params).
 
         addCleanup<FuseFakeQuantizeTransformation, opset1::FakeQuantize>(params).
         // workaround: Convert I8 -> FP32 is not supported by CPU plugin

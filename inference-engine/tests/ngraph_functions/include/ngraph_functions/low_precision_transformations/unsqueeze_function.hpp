@@ -12,7 +12,7 @@ namespace ngraph {
 namespace builder {
 namespace subgraph {
 
-class SqueezeFunction {
+class UnsqueezeFunction {
 public:
     class LayerDescription {
     public:

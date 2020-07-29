@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include "transformations/low_precision/squeeze.hpp"
+#include "transformations/low_precision/unsqueeze.hpp"
 
 #include <memory>
 #include <ngraph/ngraph.hpp>
@@ -14,45 +14,45 @@ namespace ngraph {
 namespace pass {
 namespace low_precision {
 
-SqueezeTransformation::SqueezeTransformation(const Params& params) : LayerTransformation(params) {
+UnsqueezeTransformation::UnsqueezeTransformation(const Params& params) : LayerTransformation(params) {
 }
 
-void SqueezeTransformation::registerMatcherIn(GraphRewrite &pass, TransformationContext &context) const {
+void UnsqueezeTransformation::registerMatcherIn(GraphRewrite &pass, TransformationContext &context) const {
     addPattern(
         pass,
         context,
-        make_op_pattern<opset1::Squeeze>({ make_op_label<opset1::Multiply>(), make_op_label<opset1::Constant>() }));
+        make_op_pattern<opset1::Unsqueeze>({ make_op_label<opset1::Multiply>(), make_op_label<opset1::Constant>() }));
 }
 
-void SqueezeTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
+void UnsqueezeTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
     if (!LayerTransformation::canBeTransformed(context, m.get_match_root())) {
         return;
     }
 
-    auto squeezeOnConstant = [](const std::shared_ptr<ngraph::Node>& squeeze,
+    auto unsqueezeOnConstant = [](const std::shared_ptr<ngraph::Node>& unsqueeze,
                                 const std::shared_ptr<ngraph::Node>& dequantizationOperation,
                                 const ngraph::Shape& inputShape) {
         std::shared_ptr<ngraph::Node> dequantizationOpConstant = dequantizationOperation->get_argument(1);
         if (dequantizationOpConstant->get_shape() == inputShape && dequantizationOpConstant->get_shape().size() > 1) {
-            return fold<opset1::Squeeze>(dequantizationOpConstant, squeeze->get_argument(1));
+            return fold<opset1::Unsqueeze>(dequantizationOpConstant, unsqueeze->get_argument(1));
         }
         return dequantizationOpConstant;
     };
 
-    const std::shared_ptr<Node> squeeze = separateInStandaloneBranch(m.get_match_root());
-    FakeQuantizeDequantization dequantization = NetworkHelper::getDequantization(squeeze);
+    const std::shared_ptr<Node> unsqueeze = separateInStandaloneBranch(m.get_match_root());
+    FakeQuantizeDequantization dequantization = NetworkHelper::getDequantization(unsqueeze);
 
     if (dequantization.multiply != nullptr) {
-        auto newConstant = squeezeOnConstant(squeeze, dequantization.multiply, dequantization.data->get_shape());
+        auto newConstant = unsqueezeOnConstant(unsqueeze, dequantization.multiply, dequantization.data->get_shape());
         dequantization.multiply->set_argument(1, newConstant);
     }
 
     if (dequantization.subtract != nullptr) {
-        auto newConstant = squeezeOnConstant(squeeze, dequantization.subtract, dequantization.data->get_shape());
+        auto newConstant = unsqueezeOnConstant(unsqueeze, dequantization.subtract, dequantization.data->get_shape());
         dequantization.subtract->set_argument(1, newConstant);
     }
 
-    moveDequantizationAfter(context, squeeze, dequantization, false);
+    moveDequantizationAfter(context, unsqueeze, dequantization, false);
 }
 
 
