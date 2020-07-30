@@ -8,18 +8,15 @@
 #include "common_test_utils/test_constants.hpp"
 
 using namespace LayerTestsDefinitions;
-using namespace InferenceEngine::details;
 
 namespace {
-    const std::vector<InferenceEngine::Precision> precisions = {
-        InferenceEngine::Precision::FP32,
+    const std::vector<ngraph::element::Type> precisions = {
+        ngraph::element::f32
     };
 
 
-    const std::vector<InferenceEngine::details::LayerTransformation::Params> trasformationParamValues = {
-        LayerTestsUtils::LayerTransformationParamsFactory::createParamsU8I8(),
-        LayerTestsUtils::LayerTransformationParamsFactory::createParamsI8I8().setUpdatePrecisions(false),
-        LayerTestsUtils::LayerTransformationParamsFactory::createParamsI8I8().setUpdatePrecisions(true),
+    const std::vector<ngraph::pass::low_precision::LayerTransformation::Params> trasformationParamValues = {
+        LayerTestsUtils::LayerTransformationParamsNGraphFactory::createParamsU8I8()
     };
 
     const std::vector<LayerTestsUtils::LayerTransformation::LptVersion> versionValues = {

@@ -19,12 +19,10 @@ public:
     ngraph::Shape shape;
 };
 
-std::string stringifySqueezeArgs(const std::vector<float>& axes);
-
 typedef std::tuple<
-    InferenceEngine::Precision,
+    ngraph::element::Type,
     std::string,
-    InferenceEngine::details::LayerTransformation::Params,
+    ngraph::pass::low_precision::LayerTransformation::Params,
     LayerTestsUtils::LayerTransformation::LptVersion,
     SqueezeTransformationParam
 > SqueezeTransformationParams;

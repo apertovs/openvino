@@ -20,9 +20,9 @@ public:
 };
 
 typedef std::tuple<
-    InferenceEngine::Precision,
+    ngraph::element::Type,
     std::string,
-    InferenceEngine::details::LayerTransformation::Params,
+    ngraph::pass::low_precision::LayerTransformation::Params,
     LayerTestsUtils::LayerTransformation::LptVersion,
     UnsqueezeTransformationParam
 > UnsqueezeTransformationParams;

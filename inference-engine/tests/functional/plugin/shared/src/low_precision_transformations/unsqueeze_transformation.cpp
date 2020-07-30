@@ -6,7 +6,6 @@
 #include <tuple>
 #include <vector>
 #include <string>
-#include <queue>
 #include <ie_core.hpp>
 
 #include "ngraph/op/op.hpp"
@@ -30,15 +29,15 @@ inline std::ostream& operator<<(std::ostream& os, const std::vector<float>& valu
 }
 
 InferenceEngine::Blob::Ptr UnsqueezeTransformation::GenerateInput(const InferenceEngine::InputInfo &info) const {
-    InferenceEngine::Precision netPrecision;
-    InferenceEngine::details::LayerTransformation::Params params;
+    ngraph::element::Type netPrecision;
+    ngraph::pass::low_precision::LayerTransformation::Params params;
     LayerTestsUtils::LayerTransformation::LptVersion version;
-    UnsqueezeTransformationParam squeezeParam;
+    UnsqueezeTransformationParam unsqueezeParam;
     std::string targetDevice;
 
-    std::tie(netPrecision, targetDevice, params, version, squeezeParam) = this->GetParam();
+    std::tie(netPrecision, targetDevice, params, version, unsqueezeParam) = this->GetParam();
 
-    const ngraph::builder::subgraph::FakeQuantizeOnData& fqOnData = squeezeParam.fakeQuantize;
+    const ngraph::builder::subgraph::FakeQuantizeOnData& fqOnData = unsqueezeParam.fakeQuantize;
 
     return FuncTestUtils::createAndFillBlobConsistently(
         info.getTensorDesc(),
@@ -48,35 +47,35 @@ InferenceEngine::Blob::Ptr UnsqueezeTransformation::GenerateInput(const Inferenc
 }
 
 std::string UnsqueezeTransformation::getTestCaseName(testing::TestParamInfo<UnsqueezeTransformationParams> obj) {
-    InferenceEngine::Precision netPrecision;
-    InferenceEngine::details::LayerTransformation::Params params;
+    ngraph::element::Type netPrecision;
+    ngraph::pass::low_precision::LayerTransformation::Params params;
     LayerTestsUtils::LayerTransformation::LptVersion version;
     std::string targetDevice;
     UnsqueezeTransformationParam unsqueezeParam;
     std::tie(netPrecision, targetDevice, params, version, unsqueezeParam) = obj.param;
-
     std::ostringstream result;
-    result << getTestCaseNameByParams(netPrecision, unsqueezeParam.shape, targetDevice, params, version) << "_" <<
+    result << unsqueezeParam.shape <<  "_" <<
+        targetDevice << "_" <<
+        version << "_" <<
         unsqueezeParam.fakeQuantize << "_" <<
         unsqueezeParam.unsqueezeAxes << "_" <<
+        netPrecision << "_" <<
         params.updatePrecisions << "_" <<
         unsqueezeParam.shape;
-
     return result.str();
 }
 void UnsqueezeTransformation::SetUp() {
-    InferenceEngine::Precision netPrecision;
-    InferenceEngine::details::LayerTransformation::Params params;
+    ngraph::element::Type netPrecision;
+    ngraph::pass::low_precision::LayerTransformation::Params params;
     LayerTestsUtils::LayerTransformation::LptVersion version;
     UnsqueezeTransformationParam unsqueezeParam;
 
     std::tie(netPrecision, targetDevice, params, version, unsqueezeParam) = this->GetParam();
-    ngraph::element::Type ngraphPrecision = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
 
     ConfigurePlugin(version);
 
     function = ngraph::builder::subgraph::UnsqueezeFunction::getOriginal(
-        ngraphPrecision,
+        netPrecision,
         unsqueezeParam.shape,
         unsqueezeParam.fakeQuantize,
         unsqueezeParam.unsqueezeAxes);
@@ -89,33 +88,45 @@ void UnsqueezeTransformation::SetUp() {
 }
 
 void UnsqueezeTransformation::validate() {
-    ngraph::Shape inputShape;
-    InferenceEngine::Precision netPrecision;
-    InferenceEngine::details::LayerTransformation::Params params;
+    ngraph::element::Type netPrecision;
+    ngraph::pass::low_precision::LayerTransformation::Params params;
     LayerTestsUtils::LayerTransformation::LptVersion version;
+    std::string targetDevice;
     UnsqueezeTransformationParam unsqueezeParam;
-
     std::tie(netPrecision, targetDevice, params, version, unsqueezeParam) = this->GetParam();
 
-    const InferenceEngine::CNNNetwork network = transform(params);
+    const ngraph::builder::subgraph::FakeQuantizeOnData& fqOnData = unsqueezeParam.fakeQuantize;
+
+    const auto paramsCNN = LayerTestsUtils::LayerTransformationParamsFactory::createParams();
+    const InferenceEngine::CNNNetwork network = transform(paramsCNN);
 
     IE_SUPPRESS_DEPRECATED_START
 
     InferenceEngine::OutputsDataMap outputs = network.getOutputsInfo();
     EXPECT_EQ(1, outputs.size());
+
     std::map<std::string, InferenceEngine::DataPtr>::iterator it = outputs.begin();
     const InferenceEngine::CNNLayerPtr outputLayer = getCreatorLayer(it->second).lock();
     EXPECT_TRUE(outputLayer != nullptr);
-    EXPECT_EQ("ScaleShift", outputLayer->type);
 
-    const InferenceEngine::CNNLayerPtr layer = InferenceEngine::details::CNNNetworkHelper::getParent(*outputLayer);
-    if (params.updatePrecisions) {
-        checkPrecisions(
-            *layer,
-            { { InferenceEngine::Precision::U8 }, { InferenceEngine::Precision::I8 } },
-            { getDeviceInternalPrecision(netPrecision) });
+    if (fqOnData.empty() ||
+        (fqOnData.isSigned() && ((fqOnData.outputLowValues[0] / fqOnData.outputHighValues[0]) != (-128.f/127.f))) ||
+        (!fqOnData.isSigned() && ((fqOnData.outputLowValues[0] != 0.f)))) {
+        EXPECT_EQ("Unsqueeze", outputLayer->type);
     } else {
-        checkPrecisions(*layer, netPrecision);
+        EXPECT_EQ("ScaleShift", outputLayer->type);
+
+        EXPECT_EQ(1ul, outputLayer->insData.size());
+        const InferenceEngine::DataPtr insData = outputLayer->insData[0].lock();
+        EXPECT_TRUE(insData != nullptr);
+        const InferenceEngine::CNNLayerPtr unsqueeze = getCreatorLayer(insData).lock();
+        EXPECT_TRUE(unsqueeze != nullptr);
+        EXPECT_EQ("Unsqueeze", unsqueeze->type);
+
+        if (params.updatePrecisions) {
+            const InferenceEngine::Precision precision = unsqueeze->outData[0]->getTensorDesc().getPrecision();
+            EXPECT_TRUE((precision == InferenceEngine::Precision::U8) || (precision == InferenceEngine::Precision::I8));
+        }
     }
 
     IE_SUPPRESS_DEPRECATED_END
