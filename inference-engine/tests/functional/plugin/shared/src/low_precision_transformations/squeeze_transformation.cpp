@@ -40,11 +40,10 @@ InferenceEngine::Blob::Ptr SqueezeTransformation::GenerateInput(const InferenceE
 
     const ngraph::builder::subgraph::FakeQuantizeOnData& fqOnData = squeezeParam.fakeQuantize;
 
-
     return FuncTestUtils::createAndFillBlobConsistently(
         info.getTensorDesc(),
-        fqOnData.empty() ? 25.f : fqOnData.outputHighValues[0] - fqOnData.outputLowValues[0],
-        fqOnData.empty() ? -12.5f : fqOnData.outputLowValues[0],
+        static_cast<uint32_t>(fqOnData.empty() ? 25.f : fqOnData.outputHighValues[0] - fqOnData.outputLowValues[0]),
+        static_cast<int32_t>(fqOnData.empty() ? -12.5f : fqOnData.outputLowValues[0]),
         1ul);
 }
 
@@ -58,8 +57,10 @@ std::string SqueezeTransformation::getTestCaseName(testing::TestParamInfo<Squeez
 
     std::ostringstream result;
     result << getTestCaseNameByParams(netPrecision, squeezeParam.shape, targetDevice, params, version) << "_" <<
-        squeezeParam.fakeQuantize << "_" << squeezeParam.squeezeAxes << "_" <<
-        params.updatePrecisions << squeezeParam.shape;
+        squeezeParam.fakeQuantize << "_" <<
+        squeezeParam.squeezeAxes << "_" <<
+        params.updatePrecisions << "_" <<
+        squeezeParam.shape;
 
     return result.str();
 }
@@ -78,8 +79,7 @@ void SqueezeTransformation::SetUp() {
         ngraphPrecision,
         squeezeParam.shape,
         squeezeParam.fakeQuantize,
-        squeezeParam.squeezeAxes
-        );
+        squeezeParam.squeezeAxes);
 
     ngraph::pass::InitNodeInfo().run_on_function(function);
 
@@ -101,7 +101,7 @@ void SqueezeTransformation::validate() {
 
     IE_SUPPRESS_DEPRECATED_START
 
-        InferenceEngine::OutputsDataMap outputs = network.getOutputsInfo();
+    InferenceEngine::OutputsDataMap outputs = network.getOutputsInfo();
     EXPECT_EQ(1, outputs.size());
     std::map<std::string, InferenceEngine::DataPtr>::iterator it = outputs.begin();
     const InferenceEngine::CNNLayerPtr outputLayer = getCreatorLayer(it->second).lock();
@@ -114,8 +114,7 @@ void SqueezeTransformation::validate() {
             *layer,
             { { InferenceEngine::Precision::U8 }, { InferenceEngine::Precision::I8 } },
             { getDeviceInternalPrecision(netPrecision) });
-    }
-    else {
+    } else {
         checkPrecisions(*layer, netPrecision);
     }
 

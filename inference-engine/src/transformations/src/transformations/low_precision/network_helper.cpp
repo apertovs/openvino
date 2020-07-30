@@ -158,7 +158,7 @@ void NetworkHelper::removeLayer(std::shared_ptr<Node> layer) {
     ngraph::replace_output_update_name(layer->output(0), layer->input_value(0));
 }
 
-std::shared_ptr<Node> NetworkHelper::swapMultiplyAndAdd(std::shared_ptr<Node> addAfterMultiply, const int multiplyBranch) {
+std::shared_ptr<Node> NetworkHelper::swapMultiplyAndAdd(std::shared_ptr<opset1::Add> addAfterMultiply, const int multiplyBranch) {
     // Multiply --> Add(addAfterMultiply)  ==>  Add(new) --> Multiply(new)
     // That means x*a + b ==> (x + b/a)*a; tries to fold b/a
     auto multiply = addAfterMultiply->get_input_node_shared_ptr(multiplyBranch);
@@ -190,6 +190,8 @@ std::shared_ptr<Node> NetworkHelper::swapMultiplyAndAdd(std::shared_ptr<Node> ad
 
     auto newMultiply = std::make_shared<opset1::Multiply>(newAdd, a);
     replace_node(addAfterMultiply, newMultiply);
+
+    copyInfo(addAfterMultiply, newAdd);
     return newMultiply;
 }
 
@@ -471,12 +473,16 @@ FakeQuantizeDequantization NetworkHelper::createDequantizationFromFakeQuantize(
 FakeQuantizeDequantization NetworkHelper::getDequantization(const std::shared_ptr<Node> node, const size_t parentIndex) {
     std::shared_ptr<Node> dataNode = node->input_value(parentIndex).get_node_shared_ptr();
 
-    const std::shared_ptr<ngraph::opset1::Multiply> multiply = as_type_ptr<ngraph::opset1::Multiply>(dataNode);
+    const std::shared_ptr<ngraph::opset1::Multiply> multiply = (dataNode->get_input_size() > 1ul) && is_type<opset1::Constant>(dataNode->get_input_node_ptr(1)) ?
+        as_type_ptr<ngraph::opset1::Multiply>(dataNode) :
+        nullptr;
     if (multiply != nullptr) {
         dataNode = multiply->get_input_node_shared_ptr(0);
     }
 
-    const std::shared_ptr<opset1::Subtract> subtract = as_type_ptr<opset1::Subtract>(dataNode);
+    const std::shared_ptr<opset1::Subtract> subtract = (dataNode->get_input_size() > 1ul) && is_type<opset1::Constant>(dataNode->get_input_node_ptr(1)) ?
+        as_type_ptr<opset1::Subtract>(dataNode) :
+        nullptr;
     if (subtract != nullptr) {
         dataNode = subtract->get_input_node_shared_ptr(0);
     }
@@ -652,7 +658,7 @@ NetworkHelper::InsertDequantizationResult NetworkHelper::moveDequantizationAfter
 
     std::shared_ptr<ngraph::Node> newOperation = operation->clone_with_new_inputs(inputs);
     newOperation->set_friendly_name(operation->get_friendly_name());
-    bool shouldConvert = (newOperation->get_output_element_type(0) != dequantization.multiply->get_output_element_type(0));
+    const bool shouldConvert = (newOperation->get_output_element_type(0) != dequantization.multiply->get_output_element_type(0));
     const std::shared_ptr<ngraph::opset1::Convert> convert = (updatePrecision || shouldConvert) ? dequantization.convert : nullptr;
 
     auto parent = newOperation;

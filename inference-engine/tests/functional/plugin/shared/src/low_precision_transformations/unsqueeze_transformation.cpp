@@ -40,11 +40,10 @@ InferenceEngine::Blob::Ptr UnsqueezeTransformation::GenerateInput(const Inferenc
 
     const ngraph::builder::subgraph::FakeQuantizeOnData& fqOnData = squeezeParam.fakeQuantize;
 
-
     return FuncTestUtils::createAndFillBlobConsistently(
         info.getTensorDesc(),
-        fqOnData.empty() ? 25.f : fqOnData.outputHighValues[0] - fqOnData.outputLowValues[0],
-        fqOnData.empty() ? -12.5f : fqOnData.outputLowValues[0],
+        static_cast<uint32_t>(fqOnData.empty() ? 25.f : fqOnData.outputHighValues[0] - fqOnData.outputLowValues[0]),
+        static_cast<int32_t>(fqOnData.empty() ? -12.5f : fqOnData.outputLowValues[0]),
         1ul);
 }
 
@@ -58,8 +57,10 @@ std::string UnsqueezeTransformation::getTestCaseName(testing::TestParamInfo<Unsq
 
     std::ostringstream result;
     result << getTestCaseNameByParams(netPrecision, unsqueezeParam.shape, targetDevice, params, version) << "_" <<
-        unsqueezeParam.fakeQuantize << "_" << unsqueezeParam.unsqueezeAxes << "_" <<
-        params.updatePrecisions << unsqueezeParam.shape;
+        unsqueezeParam.fakeQuantize << "_" <<
+        unsqueezeParam.unsqueezeAxes << "_" <<
+        params.updatePrecisions << "_" <<
+        unsqueezeParam.shape;
 
     return result.str();
 }
@@ -78,8 +79,7 @@ void UnsqueezeTransformation::SetUp() {
         ngraphPrecision,
         unsqueezeParam.shape,
         unsqueezeParam.fakeQuantize,
-        unsqueezeParam.unsqueezeAxes
-        );
+        unsqueezeParam.unsqueezeAxes);
 
     ngraph::pass::InitNodeInfo().run_on_function(function);
 
@@ -101,7 +101,7 @@ void UnsqueezeTransformation::validate() {
 
     IE_SUPPRESS_DEPRECATED_START
 
-        InferenceEngine::OutputsDataMap outputs = network.getOutputsInfo();
+    InferenceEngine::OutputsDataMap outputs = network.getOutputsInfo();
     EXPECT_EQ(1, outputs.size());
     std::map<std::string, InferenceEngine::DataPtr>::iterator it = outputs.begin();
     const InferenceEngine::CNNLayerPtr outputLayer = getCreatorLayer(it->second).lock();
@@ -114,8 +114,7 @@ void UnsqueezeTransformation::validate() {
             *layer,
             { { InferenceEngine::Precision::U8 }, { InferenceEngine::Precision::I8 } },
             { getDeviceInternalPrecision(netPrecision) });
-    }
-    else {
+    } else {
         checkPrecisions(*layer, netPrecision);
     }
 

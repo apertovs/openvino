@@ -69,7 +69,7 @@ public:
         SimpleLowPrecisionTransformer transform;
         transform.add<ngraph::pass::low_precision::SqueezeTransformation, ngraph::opset1::Squeeze>(testValues.params);
 
-        transform.transform(actualFunction);        
+        transform.transform(actualFunction);
 
         referenceFunction = ngraph::builder::subgraph::SqueezeFunction::getReference(
             precision,
@@ -105,7 +105,7 @@ TEST_P(SqueezeTransformation, CompareFunctions) {
 
 
     auto res = compare_functions(referenceFunction, actualFunction, true);
-  
+
     ASSERT_TRUE(res.first) << res.second;
 }
 

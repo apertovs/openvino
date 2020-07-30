@@ -30,16 +30,17 @@
 #include "transformations/low_precision/fake_quantize.hpp"
 #include "transformations/low_precision/fuse_fake_quantize.hpp"
 #include "transformations/low_precision/group_convolution.hpp"
-#include "transformations/low_precision/multiply.hpp"
 #include "transformations/low_precision/mat_mul.hpp"
 #include "transformations/low_precision/max_pool.hpp"
+#include "transformations/low_precision/multiply.hpp"
+#include "transformations/low_precision/mvn.hpp"
 #include "transformations/low_precision/normalize_l2.hpp"
 #include "transformations/low_precision/reshape.hpp"
 #include "transformations/low_precision/relu.hpp"
-#include "transformations/low_precision/subtract.hpp"
 #include "transformations/low_precision/squeeze.hpp"
+#include "transformations/low_precision/subtract.hpp"
+#include "transformations/low_precision/transpose.hpp"
 #include "transformations/low_precision/unsqueeze.hpp"
-
 
 // uncomment to display precision info during low precision transformations
 // #define DISPLAY_PECISION
@@ -170,10 +171,12 @@ LowPrecisionTransformations LowPrecisionTransformer::getAllTransformations(const
         add<MatMulTransformation, opset1::MatMul>(params).
         add<MaxPoolTransformation, opset1::MaxPool>(params).
         add<MultiplyTransformation, opset1::Multiply>(params).
+        add<MVNTransformation, op::MVN>(params).
         add<NormalizeL2Transformation, opset1::NormalizeL2>(params).
         add<ReshapeTransformation, opset1::Reshape>(params).
         add<ReluTransformation, opset1::Relu>(params).
         add<SqueezeTransformation, opset1::Squeeze>(params).
+        add<TransposeTransformation, opset1::Transpose>(params).
         add<UnsqueezeTransformation, opset1::Unsqueeze>(params).
 
         addCleanup<FuseFakeQuantizeTransformation, opset1::FakeQuantize>(params).
@@ -212,7 +215,7 @@ void make_matcher_type_relaxed(ngraph::pass::GraphRewrite* transformation) {
 }
 
 TypeRelaxedReplacer::TypeRelaxedReplacer() {
-    // List all operations that support polymorphic inputs/outputs
+    make_matcher_type_relaxed<opset1::Add>(this);
     make_matcher_type_relaxed<opset1::AvgPool>(this);
     make_matcher_type_relaxed<opset1::Clamp>(this);
     make_matcher_type_relaxed<opset1::Concat>(this);
@@ -221,14 +224,11 @@ TypeRelaxedReplacer::TypeRelaxedReplacer() {
     make_matcher_type_relaxed<opset1::FakeQuantize>(this);
     make_matcher_type_relaxed<opset1::GroupConvolution>(this);
     make_matcher_type_relaxed<opset1::Relu>(this);
-    make_matcher_type_relaxed<opset1::Reshape>(this);
     make_matcher_type_relaxed<opset1::MaxPool>(this);
-    make_matcher_type_relaxed<opset1::Add>(this);
     make_matcher_type_relaxed<opset1::Subtract>(this);
-    make_matcher_type_relaxed<opset1::NormalizeL2>(this);
     make_matcher_type_relaxed<opset1::Multiply>(this);
-    //make_matcher_type_relaxed<opset1::Squeeze>(this);
-
+    make_matcher_type_relaxed<opset1::NormalizeL2>(this);
+    make_matcher_type_relaxed<op::MVN>(this);
 }
 
 LowPrecisionTransformer::LowPrecisionTransformer(const LowPrecisionTransformations& transformations)

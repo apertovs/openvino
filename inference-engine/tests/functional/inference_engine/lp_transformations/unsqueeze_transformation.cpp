@@ -19,8 +19,6 @@
 #include "simple_low_precision_transformer.hpp"
 #include "ngraph_functions/low_precision_transformations/unsqueeze_function.hpp"
 
-#include <ngraph/pass/visualize_tree.hpp>
-
 using namespace testing;
 using namespace ngraph::pass;
 
@@ -51,18 +49,9 @@ public:
     ngraph::element::Type precision;
 };
 
-
 class UnsqueezeTransformation : public LayerTransformation, public testing::WithParamInterface<UnsqueezeTransformationTestValues> {
 public:
     void SetUp() override {
-        //const auto input = std::make_shared<ngraph::opset1::Parameter>(ngraph::element::f32, ngraph::Shape{3, 2});
-        //auto axes = std::make_shared<ngraph::opset1::Constant>(ngraph::element::i64, ngraph::Shape{ 2 }, std::vector<float>{0.0, 3.0});
-        //auto result = ngraph::pass::low_precision::fold<ngraph::opset1::Unsqueeze>(input, axes);
-
-        //1;
-
-
-        //return;
         const UnsqueezeTransformationTestValues testValues = GetParam();
         const ngraph::element::Type precision = testValues.precision;
 
@@ -78,10 +67,7 @@ public:
 
         SimpleLowPrecisionTransformer transform;
         transform.add<ngraph::pass::low_precision::UnsqueezeTransformation, ngraph::opset1::Unsqueeze>(testValues.params);
-        VisualizeTree("C:\\result\\unsq.before").run_on_module(std::vector<std::shared_ptr<ngraph::Function>>{ actualFunction });
-
-        transform.transform(actualFunction);        
-        VisualizeTree("C:\\result\\unsq.after").run_on_module(std::vector<std::shared_ptr<ngraph::Function>>{ actualFunction });
+        transform.transform(actualFunction);
 
         referenceFunction = ngraph::builder::subgraph::UnsqueezeFunction::getReference(
             precision,
@@ -92,7 +78,6 @@ public:
                 testValues.multiplyExpected,
                 testValues.subtractExpected
             });
-        VisualizeTree("C:\\result\\reference.transformed").run_on_module(std::vector<std::shared_ptr<ngraph::Function>>{ referenceFunction });
     }
 
     static std::string getTestCaseName(testing::TestParamInfo<UnsqueezeTransformationTestValues> obj) {
@@ -118,7 +103,7 @@ TEST_P(UnsqueezeTransformation, CompareFunctions) {
 
 
     auto res = compare_functions(referenceFunction, actualFunction, true);
-  
+
     ASSERT_TRUE(res.first) << res.second;
 }
 
