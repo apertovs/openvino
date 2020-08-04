@@ -1,12 +1,10 @@
-﻿// Copyright (C) 2018-2020 Intel Corporation
+﻿// Copyright (C) 2020 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
 #include "transformations/low_precision/concat.hpp"
 
 #include <algorithm>
-#include <cmath>
-#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -88,7 +86,6 @@ void ConcatTransformation::transform(TransformationContext& context, ngraph::pat
         return;
     }
 
-
     FakeQuantizeDequantization dequantization;
 
     if ((quantizationLayersDetails[0].inputHighValues.size() == 1)) {
@@ -121,7 +118,6 @@ void ConcatTransformation::transform(TransformationContext& context, ngraph::pat
                 return;
             }
         }
-
 
         const float dequantizationScale = maxOutputInterval / (dataPrecision.max - dataPrecision.min);
         const float max = maxOutputInterval / ((dataPrecision.max - dataPrecision.min) / dataPrecision.max);
@@ -210,8 +206,8 @@ void ConcatTransformation::addDequantizationLayers(
         const std::string originalLayerName,
         std::vector<FakeQuantizeDequantization>& dequantizationsToConcatenate)> getLayerDequantizationCallback) const {
     std::unordered_map<std::string, ngraph::Node*> outputs;
-    for (size_t i = 0; i < context.network->get_output_size(); ++i) {
-        ngraph::Node* node = context.network->get_output_op(i).get();
+    for (size_t i = 0; i < context.function->get_output_size(); ++i) {
+        ngraph::Node* node = context.function->get_output_op(i).get();
         if (node->get_input_size() != 1ul) {
             THROW_IE_LPT_EXCEPTION(*node) << "unexpected inputs count for result node";
         }

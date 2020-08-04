@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2020 Intel Corporation
+// Copyright (C) 2020 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -17,7 +17,7 @@
 #include "ilayer_transformations_manager.hpp"
 #include "transformation_context.hpp"
 #include "quantization_details.hpp"
-#include <transformations/low_precision/common/ie_lpt_exception.hpp>
+#include "transformations/low_precision/common/ie_lpt_exception.hpp"
 #include "common/fake_quantize_dequantization.hpp"
 
 /*****************************************************
@@ -40,7 +40,6 @@
 namespace ngraph {
 namespace pass {
 namespace low_precision {
-
 
 class TRANSFORMATIONS_API DataPrecision {
 public:
@@ -148,7 +147,6 @@ inline std::ostream &operator << (std::ostream &os, const DataPrecision& value) 
     return os;
 }
 
-
 // Base class for all LP transformations, holds some common data structures
 class TRANSFORMATIONS_API LayerTransformation {
 public:
@@ -245,7 +243,6 @@ public:
 
     void setQuantizationIntervalAsymmetryThreshold(const float value);
     void setZeroThreshold(const float value);
-    void setDequantizationShiftToZeroRatioTreshold(const float value);
     void setMinQuantizationLevels(const size_t levels);
 
     const std::vector<element::Type>& getPrecisionsOnActivations() const;
@@ -280,20 +277,6 @@ protected:
         const std::vector<float>& dequantizationScales,
         const std::vector<float>& dequantizationShifts);
 #endif
-    void addDequantizationLayer(
-        TransformationContext& context,
-        const std::shared_ptr<Node> layer,
-        const FakeQuantizeDequantization& dequantization) const;
-
-    void fillFromQuantizationDetails(
-            const QuantizationDetails& quantizationDetails,
-            const DataPrecision& dataPrecision,
-            std::vector<float>& dequantizationScales,
-            std::vector<float>& dequantizationShifts) const;
-
-    void checkAndUpdateDequantizationShiftWithZero(
-            const QuantizationDetails& quantizationDetails,
-            std::vector<float>& dequantizationShifts) const;
 
     bool updatePrecisions;
     QuantizedTensorAlignment quantizedTensorAlignmentOnActivations;
@@ -306,8 +289,6 @@ protected:
     float quantizationIntervalAsymmetryThreshold;
     // absolute value, used to determine zero
     float zeroThreshold;
-    // relative value, used to replace quantization shift to zero
-    float dequantizationShiftToZeroRatioTreshold;
     size_t minQuantizationLevels;
 
     static const char originalLayerPostfix[];
@@ -317,8 +298,6 @@ protected:
 protected:
     std::shared_ptr<ngraph::Node> separateInStandaloneBranch(std::shared_ptr<ngraph::Node> node) const;
 
-    // TODO: remove context
-    // TODO: remove dequantization
     std::shared_ptr<ngraph::Node> moveDequantizationAfter(
         TransformationContext &context,
         const std::shared_ptr<ngraph::Node>& operation,
@@ -331,9 +310,7 @@ protected:
         const FakeQuantizeDequantization& dequantization,
         const bool removeConvert) const;
 
-    void removeConvertIfPossible(
-        TransformationContext &context,
-        const std::shared_ptr<ngraph::Node>& operation) const;
+    void removeConvertIfPossible(const std::shared_ptr<ngraph::Node>& operation) const;
 
     void updateOutput(
         TransformationContext &context,

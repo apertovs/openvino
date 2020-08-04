@@ -19,16 +19,17 @@
 
 #include "ngraph_ops/type_relaxed.hpp"
 
+// branch specific transformations
+#include "transformations/low_precision/concat.hpp"
+#include "transformations/low_precision/concat_multi_channels.hpp"
+
+// general transformations
 #include "transformations/low_precision/add.hpp"
 #include "transformations/low_precision/avg_pool.hpp"
 #include "transformations/low_precision/clamp.hpp"
-#include "transformations/low_precision/concat.hpp"
-#include "transformations/low_precision/concat_multi_channels.hpp"
-#include "transformations/low_precision/convert.hpp"
 #include "transformations/low_precision/convolution.hpp"
 #include "transformations/low_precision/depth_to_space.hpp"
 #include "transformations/low_precision/fake_quantize.hpp"
-#include "transformations/low_precision/fuse_fake_quantize.hpp"
 #include "transformations/low_precision/group_convolution.hpp"
 #include "transformations/low_precision/mat_mul.hpp"
 #include "transformations/low_precision/max_pool.hpp"
@@ -41,6 +42,12 @@
 #include "transformations/low_precision/subtract.hpp"
 #include "transformations/low_precision/transpose.hpp"
 #include "transformations/low_precision/unsqueeze.hpp"
+
+// cleanup transformations
+#include "transformations/low_precision/convert.hpp"
+#include "transformations/low_precision/fuse_fake_quantize.hpp"
+#include "transformations/low_precision/subtract_multiply_to_multiply_add.hpp"
+
 
 namespace ngraph {
 namespace pass {
@@ -170,13 +177,14 @@ LowPrecisionTransformations LowPrecisionTransformer::getAllTransformations(const
         add<MultiplyTransformation, opset1::Multiply>(params).
         add<MVNTransformation, op::MVN>(params).
         add<NormalizeL2Transformation, opset1::NormalizeL2>(params).
-        add<ReshapeTransformation, opset1::Reshape>(params).
         add<ReluTransformation, opset1::Relu>(params).
+        add<ReshapeTransformation, opset1::Reshape>(params).
         add<SqueezeTransformation, opset1::Squeeze>(params).
         add<TransposeTransformation, opset1::Transpose>(params).
         add<UnsqueezeTransformation, opset1::Unsqueeze>(params).
 
         addCleanup<FuseFakeQuantizeTransformation, opset1::FakeQuantize>(params).
+        addCleanup<SubtractMultiplyToMultiplyAddTransformation, opset1::Multiply>(params).
         // workaround: Convert I8 -> FP32 is not supported by CPU plugin
         addCleanup<ConvertTransformation, opset1::Convert>(params);
 }

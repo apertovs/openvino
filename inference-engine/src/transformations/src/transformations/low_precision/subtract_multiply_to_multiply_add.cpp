@@ -1,16 +1,12 @@
-﻿// Copyright (C) 2018-2020 Intel Corporation
+﻿// Copyright (C) 2020 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
 #include "transformations/low_precision/subtract_multiply_to_multiply_add.hpp"
 
-#include <algorithm>
 #include <memory>
 #include <string>
-#include <unordered_set>
-#include <utility>
 #include <vector>
-#include <cassert>
 
 #include "transformations/low_precision/common/ie_lpt_exception.hpp"
 #include "transformations/low_precision/network_helper.hpp"
@@ -19,7 +15,7 @@ namespace ngraph {
 namespace pass {
 namespace low_precision {
 
-void SubtrcatMultiplyToMultiplyAddTransformation::registerMatcherIn(GraphRewrite &pass, TransformationContext &context) const {
+void SubtractMultiplyToMultiplyAddTransformation::registerMatcherIn(GraphRewrite &pass, TransformationContext &context) const {
     addSingleNodePattern<opset1::Multiply>(pass, context);
 }
 
@@ -48,12 +44,35 @@ FakeQuantizeDequantization get(const std::shared_ptr<Node> node) {
     return FakeQuantizeDequantization(dataNode, convert, subtract, multiply);
 }
 
-void SubtrcatMultiplyToMultiplyAddTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
+void SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
     auto multiply = m.get_match_root();
-    FakeQuantizeDequantization dequantization = get(multiply);
-    if (dequantization.empty()) {
+    if (!canBeTransformed(context, multiply)) {
         return;
     }
+
+    FakeQuantizeDequantization dequantization = get(multiply);
+
+    // multiply operation is mandatory: subtract without multiply is part of new LPT operation set
+    if (dequantization.empty() || (dequantization.multiply == nullptr)) {
+        return;
+    }
+
+    const element::Type precisionBeforeDequantization = dequantization.convert == nullptr ?
+        (dequantization.subtract == nullptr ?
+            dequantization.multiply->get_input_node_ptr(0)->get_output_element_type(NetworkHelper::getInputIndex(
+                dequantization.multiply->get_input_node_shared_ptr(0),
+                dequantization.multiply)) :
+            dequantization.subtract->get_input_node_ptr(0)->get_output_element_type(NetworkHelper::getInputIndex(
+                dequantization.subtract->get_input_node_shared_ptr(0),
+                dequantization.subtract))) :
+        dequantization.convert->get_input_node_ptr(0)->get_output_element_type(NetworkHelper::getInputIndex(
+            dequantization.convert->get_input_node_shared_ptr(0),
+            dequantization.convert));
+
+    const element::Type precisionAfterDequantization = dequantization.subtract == nullptr ?
+        dequantization.multiply->get_output_element_type(0) :
+        dequantization.subtract->get_output_element_type(0);
+
 
     multiply = separateInStandaloneBranch(multiply);
     dequantization = get(multiply);
@@ -62,21 +81,85 @@ void SubtrcatMultiplyToMultiplyAddTransformation::transform(TransformationContex
     }
 
     std::shared_ptr<Node> lastNew = dequantization.data;
+    element::Type lastNewPrecision = precisionBeforeDequantization;
+    std::shared_ptr<Node> lastPrevious = dequantization.multiply != nullptr ?
+        as_type_ptr<Node>(dequantization.multiply) :
+        dequantization.subtract;
 
-    if (dequantization.multiply != nullptr) {
-        auto multiplyConstant = dequantization.multiply->get_input_node_shared_ptr(1);
-        lastNew = std::make_shared<opset1::Multiply>(lastNew, multiplyConstant);
-        NetworkHelper::copyInfo(dequantization.multiply, lastNew);
+    Shape constShape = dequantization.multiply != nullptr ?
+        dequantization.multiply->get_input_node_shared_ptr(1)->get_output_shape(0) :
+        dequantization.subtract->get_input_node_shared_ptr(1)->get_output_shape(0);
+
+    size_t constShapeVolume = 1ul;
+    if (!constShape.empty()) {
+        for (size_t i = 0; i < constShape.size(); ++i) {
+            constShapeVolume *= constShape[i];
+        }
     }
 
-    if (dequantization.subtract != nullptr) {
-        auto subtractConstant = dequantization.subtract->get_input_node_shared_ptr(1);
-        lastNew = std::make_shared<opset1::Add>(lastNew, fold<opset1::Multiply>(
+    const bool convertPowerToScaleShift = true;
+    if ((constShapeVolume == 1ul) && convertPowerToScaleShift) {
+        const Shape shape = dequantization.multiply->get_input_node_ptr(0)->get_output_shape(NetworkHelper::getInputIndex(
+            dequantization.multiply->get_input_node_shared_ptr(0),
+            dequantization.multiply));
+        constShape = std::vector<size_t>(shape.size(), 1ul);
+        constShape[1] = shape[1];
+    }
+
+    {
+        std::shared_ptr<Node> multiplyConstant = dequantization.multiply != nullptr ?
+            dequantization.multiply->get_input_node_shared_ptr(1) :
+            std::make_shared<opset1::Constant>(precisionAfterDequantization, constShape, std::vector<float>(constShapeVolume, 1));
+
+        if (convertPowerToScaleShift) {
+            multiplyConstant = fold<opset1::Broadcast>(
+                multiplyConstant,
+                std::make_shared<opset1::Constant>(element::i32, Shape{ constShape.size() }, constShape));
+        }
+
+        if (lastNewPrecision != precisionAfterDequantization) {
+            lastNew = std::make_shared<op::TypeRelaxed<opset1::Multiply>>(lastNew, multiplyConstant);
+            NetworkHelper::setOutDataPrecision(lastNew, precisionAfterDequantization);
+        } else {
+            lastNew = std::make_shared<opset1::Multiply>(lastNew, multiplyConstant);
+        }
+
+        if (dequantization.multiply != nullptr) {
+            NetworkHelper::copyInfo(dequantization.multiply, lastNew);
+        }
+
+        lastNewPrecision = precisionAfterDequantization;
+    }
+
+    if ((dequantization.subtract != nullptr) || (convertPowerToScaleShift && (dequantization.subtract == nullptr))) {
+        std::shared_ptr<Node> originalSubtractConstant = dequantization.subtract != nullptr ?
+            dequantization.subtract->get_input_node_shared_ptr(1) :
+            std::make_shared<opset1::Constant>(precisionAfterDequantization, constShape, std::vector<float>(constShapeVolume, 0));
+
+        std::shared_ptr<Node> subtractConstant = fold<opset1::Multiply>(
             fold<opset1::Multiply>(
+                fold<opset1::Convert>(originalSubtractConstant, precisionAfterDequantization),
+                std::make_shared<opset1::Constant>(precisionAfterDequantization, Shape{}, std::vector<float>{ -1.f })),
+            fold<opset1::Convert>(dequantization.multiply->get_input_node_shared_ptr(1), precisionAfterDequantization));
+
+        if (convertPowerToScaleShift) {
+            subtractConstant = fold<opset1::Broadcast>(
                 subtractConstant,
-                std::make_shared<opset1::Constant>(subtractConstant->get_output_element_type(0), Shape{}, std::vector<float>{ -1.f })),
-            dequantization.multiply->get_input_node_shared_ptr(1)));
-        NetworkHelper::copyInfo(dequantization.subtract, lastNew);
+                std::make_shared<opset1::Constant>(element::i32, Shape{ constShape.size() }, constShape));
+        }
+
+        if (lastNewPrecision != precisionAfterDequantization) {
+            lastNew = std::make_shared<op::TypeRelaxed<opset1::Add>>(lastNew, subtractConstant);
+            NetworkHelper::setOutDataPrecision(lastNew, precisionAfterDequantization);
+        } else {
+            lastNew = std::make_shared<opset1::Add>(lastNew, subtractConstant);
+        }
+
+        if (dequantization.subtract != nullptr) {
+            NetworkHelper::copyInfo(dequantization.subtract, lastNew);
+        }
+
+        lastNewPrecision = precisionAfterDequantization;
     }
 
     const std::shared_ptr<Node> lastOriginal = dequantization.multiply == nullptr ?
@@ -84,7 +167,11 @@ void SubtrcatMultiplyToMultiplyAddTransformation::transform(TransformationContex
         dequantization.multiply;
     replace_node(lastOriginal, lastNew);
 
-    updateOutput(context, dequantization.multiply, lastNew);
+    updateOutput(context, lastNew, lastPrevious);
+}
+
+bool SubtractMultiplyToMultiplyAddTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> op) const {
+    return op->get_output_shape(0).size() >= 4;
 }
 
 } // namespace low_precision

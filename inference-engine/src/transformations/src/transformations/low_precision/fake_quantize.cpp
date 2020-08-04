@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2018-2020 Intel Corporation
+﻿// Copyright (C) 2020 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -36,7 +36,6 @@ void FakeQuantizeTransformation::transform(TransformationContext& context, ngrap
     }
 
     // FakeQuantize on weights are used without dequantization ScaleShifts
-    // TODO: include into the transformation pattern?
     if (NetworkHelper::onWeights(layer)) {
         return;
     }
@@ -82,18 +81,6 @@ void FakeQuantizeTransformation::transform(TransformationContext& context, ngrap
         printDequantizationValues(dequantizationScales, dequantizationShifts);
     }
 #endif
-
-    // std::vector<std::shared_ptr<ngraph::Function>> transformedModule{ context.network };
-
-    //std::shared_ptr<opset1::FakeQuantize> quantize = as_type_ptr<opset1::FakeQuantize>(std::get<0>(QDQ));
-    //if (quantize != nullptr) {
-    //    auto quantizeConvert = as_type_ptr<opset1::Convert>(quantize->get_output_target_inputs(0).begin()->get_node()->shared_from_this());
-    //    if (quantizeConvert != nullptr) {
-    //        // Remove the first Convert and built convert directly to FQ by modifying output type
-    //        NetworkHelper::setOutDataPrecision(quantize, quantizeConvert->get_output_element_type(0));
-    //        NetworkHelper::removeLayer(quantizeConvert);
-    //    }
-    //}
 
     std::shared_ptr<ngraph::Node> dequantize = as_type_ptr<ngraph::Node>(std::get<1>(QDQ));
     updateOutput(context, dequantize, layer);

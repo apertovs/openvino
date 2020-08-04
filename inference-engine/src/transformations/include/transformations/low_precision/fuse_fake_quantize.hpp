@@ -1,11 +1,11 @@
-// Copyright (C) 2018-2020 Intel Corporation
+// Copyright (C) 2020 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
 #pragma once
 
-#include <algorithm>
-
+#include <memory>
+#include <ngraph/ngraph.hpp>
 #include "transformations/low_precision/layer_transformation.hpp"
 
 namespace ngraph {
@@ -20,11 +20,7 @@ public:
     void transform(TransformationContext& context, ngraph::pattern::Matcher &m) const override;
 
 private:
-    std::shared_ptr<opset1::FakeQuantize> handleDequantization(
-        TransformationContext& context,
-        const std::shared_ptr<opset1::FakeQuantize>& fakeQuantize) const;
-
-    std::shared_ptr<opset1::FakeQuantize> handleAdd(
+    std::shared_ptr<opset1::FakeQuantize> handle(
         TransformationContext& context,
         const std::shared_ptr<opset1::FakeQuantize>& fakeQuantize) const;
 };

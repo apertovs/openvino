@@ -19,6 +19,8 @@ using namespace ngraph;
 using namespace ngraph::pass;
 using namespace ngraph::pass::low_precision;
 
+namespace {
+
 template<typename T>
 std::shared_ptr<ngraph::op::Constant> createNewScalesConst(const ngraph::op::Constant& originalConst) {
     std::vector<T> source = originalConst.cast_vector<T>();
@@ -26,12 +28,13 @@ std::shared_ptr<ngraph::op::Constant> createNewScalesConst(const ngraph::op::Con
     std::vector<T> newData(source.size());
     for (size_t i = 0; i < source.size(); ++i) {
         newData[i] = source[i] < 0 ? -1 : 1;
-        std::cout << newData[i] << std::endl;
     }
 
     const ngraph::element::Type type = originalConst.get_output_element_type(0);
     return ngraph::op::Constant::create(type, originalConst.get_shape(), newData);
 }
+
+} // namespace
 
 bool MVNTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> operation) const {
     if (!LayerTransformation::canBeTransformed(context, operation)) {
@@ -55,7 +58,6 @@ bool MVNTransformation::canBeTransformed(const TransformationContext& context, s
     if (!NetworkHelper::isScalarLike(scalesConst) && acrossChannels) {
         return false;
     }
-    std::cout << "asd" << std::endl;
     return true;
 }
 
@@ -69,10 +71,9 @@ void MVNTransformation::registerMatcherIn(GraphRewrite& pass, TransformationCont
 void MVNTransformation::transform(TransformationContext &context, ngraph::pattern::Matcher &m) const {
     std::shared_ptr<Node> operation = m.get_match_root();
     if (!canBeTransformed(context, operation)) {
-        removeConvertIfPossible(context, operation);
+        removeConvertIfPossible(operation);
         return;
     }
-    std::cout << "asd" << std::endl;
 
     auto mvn = as_type_ptr<op::MVN>(separateInStandaloneBranch(operation));
 
@@ -80,7 +81,6 @@ void MVNTransformation::transform(TransformationContext &context, ngraph::patter
     auto scalesConst = as_type_ptr<opset1::Constant>(dequantization.multiply->get_input_node_shared_ptr(1));
     if (scalesConst == nullptr) {
         scalesConst = as_type_ptr<opset1::Constant>(dequantization.multiply->get_input_node_shared_ptr(0));
-        std::cout << "asd" << std::endl;
     }
 
     const bool acrossChannels = mvn->get_reduction_axes().count(1) > 0;
@@ -103,7 +103,6 @@ void MVNTransformation::transform(TransformationContext &context, ngraph::patter
             }
         }
     }
-    std::cout << "asd" << std::endl;
 
     auto newMVN = std::make_shared<op::TypeRelaxed<op::MVN>>(
         op::MVN(dequantization.subtract ?
@@ -115,9 +114,9 @@ void MVNTransformation::transform(TransformationContext &context, ngraph::patter
         type);
 
     auto newMultiply = std::make_shared<opset1::Multiply>(newMVN, newScalesConst);
-    //newMVN->set_friendly_name(mvn->get_friendly_name());
+    newMVN->set_friendly_name(mvn->get_friendly_name());
 
     replace_node(mvn, newMultiply);
 
-    updateOutput(context, newMultiply, mvn);
+    updateOutput(context, newMultiply, newMVN);
 }
