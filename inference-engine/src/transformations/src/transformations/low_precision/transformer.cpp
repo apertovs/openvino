@@ -42,9 +42,6 @@
 #include "transformations/low_precision/transpose.hpp"
 #include "transformations/low_precision/unsqueeze.hpp"
 
-// uncomment to display precision info during low precision transformations
-// #define DISPLAY_PECISION
-
 namespace ngraph {
 namespace pass {
 namespace low_precision {
