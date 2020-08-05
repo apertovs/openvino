@@ -42,7 +42,8 @@ public:
     static std::shared_ptr<ngraph::Function> getReference(
         const ngraph::element::Type originalFunctionPrecision,
         const ngraph::Shape& inputShape,
-        const ExpectedValues& values);
+        const ExpectedValues& values,
+        const bool shouldConvert);
 };
 
 }  // namespace subgraph

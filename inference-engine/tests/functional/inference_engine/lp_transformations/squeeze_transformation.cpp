@@ -46,15 +46,21 @@ public:
     SqueezeFunction::LayerDescription subtractExpected;
     std::vector<float> squeezeArgs;
     ngraph::Shape inputShape;
-    ngraph::element::Type precision;
+    bool shouldConvert;
 };
 
+typedef std::tuple<
+    ngraph::element::Type,
+    SqueezeTransformationTestValues> SqueezeTransformationParams;
 
-class SqueezeTransformation : public LayerTransformation, public testing::WithParamInterface<SqueezeTransformationTestValues> {
+
+class SqueezeTransformation : public LayerTransformation, public testing::WithParamInterface<SqueezeTransformationParams> {
 public:
     void SetUp() override {
-        const SqueezeTransformationTestValues testValues = GetParam();
-        const ngraph::element::Type precision = testValues.precision;
+        const SqueezeTransformationParams params = GetParam();
+        const ngraph::element::Type precision = std::get<0>(params);
+        const SqueezeTransformationTestValues testValues = std::get<1>(params);
+
 
         actualFunction = ngraph::builder::subgraph::SqueezeFunction::getOriginal(
             precision,
@@ -79,11 +85,14 @@ public:
                 testValues.params.updatePrecisions ? testValues.params.precisionsOnActivations[0] : precision,
                 testValues.multiplyExpected,
                 testValues.subtractExpected
-            });
+            },
+            testValues.shouldConvert);
     }
 
-    static std::string getTestCaseName(testing::TestParamInfo<SqueezeTransformationTestValues> obj) {
-        const SqueezeTransformationTestValues testValues = obj.param;
+    static std::string getTestCaseName(testing::TestParamInfo<SqueezeTransformationParams> obj) {
+        const SqueezeTransformationParams params = obj.param;
+        const ngraph::element::Type precision = std::get<0>(params);
+        const SqueezeTransformationTestValues testValues = std::get<1>(params);
 
         std::ostringstream result;
         result <<
@@ -92,11 +101,16 @@ public:
             testValues.subtractActual.shape << "_" <<
             testValues.subtractExpected.shape << "_" <<
             testValues.inputShape << "_" <<
-            testValues.precision << "_" <<
+            precision << "_" <<
             testValues.squeezeArgs;
 
         return result.str();
     }
+};
+
+const std::vector<ngraph::element::Type> precisions = {
+    ngraph::element::f32,
+    // ngraph::element::f16
 };
 
 TEST_P(SqueezeTransformation, CompareFunctions) {
@@ -118,7 +132,7 @@ const std::vector<SqueezeTransformationTestValues> testValues = {
     subtractExpected(@values, @shape);
     squeezeArgs;
     inputShape;
-    precision;
+    shouldConvert;
     */
 
     {
@@ -129,7 +143,7 @@ const std::vector<SqueezeTransformationTestValues> testValues = {
         { { 128 }, { 1, 1000 } },
         { 2.0, 3.0 },
         { 1, 1000, 1, 1 },
-        ngraph::element::f32
+        true
     },
 
     {
@@ -140,7 +154,7 @@ const std::vector<SqueezeTransformationTestValues> testValues = {
         { { 32 }, { 1000 } },
         { 1.0, 2.0, 3.0 },
         { 1000, 1, 1, 1 },
-        ngraph::element::f32
+        true
     },
     {
         LayerTransformation::createParamsI8I8(),
@@ -150,22 +164,24 @@ const std::vector<SqueezeTransformationTestValues> testValues = {
         { { 256 }, { 1 } },
         { 1.0, 3.0 },
         { 1, 1, 1000, 1 },
-        ngraph::element::f32
+        true
     },
     {
-        LayerTransformation::createParamsI8I8(),
+        LayerTransformation::createParamsI8I8().setUpdatePrecisions(false),
         { { 0.2f }, { 1, 1000, 1, 1 } },
         { { 0.2f }, { 1000 } },
         { { 128 }, { 1, 1000, 1, 1 } },
         { { 128 }, { 1000 } },
         { },
         { 1, 1000, 1, 1 },
-        ngraph::element::f32
+        false
     }
 };
 
 INSTANTIATE_TEST_CASE_P(
     LPT,
     SqueezeTransformation,
-    ::testing::ValuesIn(testValues),
+    ::testing::Combine(
+        ::testing::ValuesIn(precisions),
+        ::testing::ValuesIn(testValues)),
     SqueezeTransformation::getTestCaseName);

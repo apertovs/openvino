@@ -65,7 +65,8 @@ std::shared_ptr<ngraph::Function> SqueezeFunction::getReference(
     const ngraph::element::Type originalFunctionPrecision,
     const ngraph::Shape& inputShape,
     const std::vector<float>& axes,
-    const ExpectedValues& values) {
+    const ExpectedValues& values,
+    const bool shouldConvert) {
     auto input = std::make_shared<ngraph::opset1::Parameter>(originalFunctionPrecision, ngraph::Shape(inputShape));
     std::shared_ptr<ngraph::Node> parent = input;
 
@@ -74,8 +75,10 @@ std::shared_ptr<ngraph::Function> SqueezeFunction::getReference(
         std::make_shared<ngraph::opset1::Constant>(element::i64, Shape{ axes.size() }, axes));
     parent = squeeze;
 
-    const std::shared_ptr<ngraph::Node> convert = std::make_shared<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
-    parent = convert;
+    if (shouldConvert) {
+        const std::shared_ptr<ngraph::Node> convert = std::make_shared<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
+        parent = convert;
+    }
 
     if (!values.subtract.values.empty()) {
         const std::shared_ptr<ngraph::Node> subtract = std::make_shared<op::TypeRelaxed<ngraph::opset1::Subtract>>(

@@ -49,7 +49,8 @@ public:
         const ngraph::element::Type originalFunctionPrecision,
         const ngraph::Shape& inputShape,
         const std::vector<float>& axes,
-        const ExpectedValues& values);
+        const ExpectedValues& values,
+        const bool shouldConvert);
 };
 
 }  // namespace subgraph

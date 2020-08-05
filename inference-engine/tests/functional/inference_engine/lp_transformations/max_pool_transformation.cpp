@@ -26,6 +26,7 @@ public:
     low_precision::LayerTransformation::Params params;
     std::vector<float> subtractValues;
     std::vector<float> mutliplyValues;
+    bool shouldConvert;
 };
 
 typedef std::tuple<
@@ -39,6 +40,7 @@ public:
         const ngraph::element::Type precision = std::get<0>(GetParam());
         const ngraph::Shape shape = std::get<1>(GetParam());
         const MaxPoolTransformationTestValues testValues = std::get<2>(GetParam());
+
 
         actualFunction = ngraph::builder::subgraph::MaxPoolFunction::getOriginal(
             precision,
@@ -60,7 +62,8 @@ public:
                 testValues.params.updatePrecisions ? testValues.params.precisionsOnActivations[0] : precision,
                 testValues.subtractValues,
                 testValues.mutliplyValues
-            });
+            },
+            testValues.shouldConvert);
     }
 
     static std::string getTestCaseName(testing::TestParamInfo<MaxPoolTransformationParams> obj) {
@@ -89,9 +92,9 @@ const std::vector<ngraph::Shape> shapes = {
 };
 
 const std::vector<MaxPoolTransformationTestValues> testValues = {
-    { LayerTransformation::createParamsU8I8(), { 128 }, { 0.02f } },
-    { LayerTransformation::createParamsU8I8().setUpdatePrecisions(false), { 128 }, { 0.02f } },
-    { LayerTransformation::createParamsI8I8(), { 128 }, { 0.02f } },
+    { LayerTransformation::createParamsU8I8(), { 128 }, { 0.02f }, true },
+    { LayerTransformation::createParamsU8I8().setUpdatePrecisions(false), { 128 }, { 0.02f }, false },
+    { LayerTransformation::createParamsI8I8(), { 128 }, { 0.02f }, true },
 };
 
 INSTANTIATE_TEST_CASE_P(
