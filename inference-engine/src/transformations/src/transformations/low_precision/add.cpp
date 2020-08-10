@@ -23,10 +23,10 @@ void AddTransformation::registerMatcherIn(GraphRewrite &pass, TransformationCont
     addSingleNodePattern<opset1::Add>(pass, context);
 }
 
-void AddTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
+bool AddTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
     std::shared_ptr<opset1::Add> op = as_type_ptr<opset1::Add>(m.get_match_root());
     if (!canBeTransformed(context, op)) {
-        return;
+        return false;
     }
 
     const std::shared_ptr<opset1::Add> add = as_type_ptr<opset1::Add>(separateInStandaloneBranch(op));
@@ -37,7 +37,7 @@ void AddTransformation::transform(TransformationContext& context, ngraph::patter
         const auto multiplyBranch = getMultiplyConstBranch(add);
 
         if (multiplyBranch.first == -1)
-            return;
+            return false;
 
         newMultiply = NetworkHelper::swapMultiplyAndAdd(add, multiplyBranch.first);
     } else {
@@ -92,6 +92,7 @@ void AddTransformation::transform(TransformationContext& context, ngraph::patter
     }
 
     updateOutput(context, newMultiply, add);
+    return true;
 }
 
 } // namespace low_precision

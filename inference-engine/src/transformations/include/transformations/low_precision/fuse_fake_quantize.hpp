@@ -17,7 +17,7 @@ public:
     FuseFakeQuantizeTransformation(const Params& params) : LayerTransformation(params) {}
     ~FuseFakeQuantizeTransformation() override {}
     void registerMatcherIn(GraphRewrite& pass, TransformationContext& context) const override;
-    void transform(TransformationContext& context, ngraph::pattern::Matcher &m) const override;
+    bool transform(TransformationContext& context, ngraph::pattern::Matcher &m) const override;
 
 private:
     std::shared_ptr<opset1::FakeQuantize> handle(

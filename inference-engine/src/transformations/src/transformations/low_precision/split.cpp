@@ -17,9 +17,9 @@ void SplitTransformation::registerMatcherIn(GraphRewrite& pass, TransformationCo
                make_op_pattern<opset1::Split>({ make_op_label<opset1::Multiply>(), make_op_label<opset1::Constant>() }));
 }
 
-void SplitTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher& m) const {
+bool SplitTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher& m) const {
     if (!LayerTransformation::canBeTransformed(context, m.get_match_root())) {
-        return;
+        return false;
     }
 
     const std::shared_ptr<Node> split = separateInStandaloneBranch(m.get_match_root());
@@ -99,6 +99,7 @@ void SplitTransformation::transform(TransformationContext& context, ngraph::patt
 
     replace_node(split, replacement);
     updateOutputs(context, lastNodes, newSplit);
+    return true;
 }
 
 std::vector<size_t> SplitTransformation::getConstSplitLengths(

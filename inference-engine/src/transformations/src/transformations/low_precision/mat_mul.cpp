@@ -14,10 +14,10 @@ using namespace ngraph;
 using namespace ngraph::pass;
 using namespace ngraph::pass::low_precision;
 
-void MatMulTransformation::transform(TransformationContext &context, ngraph::pattern::Matcher &m) const {
+bool MatMulTransformation::transform(TransformationContext &context, ngraph::pattern::Matcher &m) const {
     std::shared_ptr<ngraph::Node> matMul = m.get_match_root();
     if (!canBeTransformed(context, matMul)) {
-        return;
+        return false;
     }
 
     matMul = separateInStandaloneBranch(matMul);
@@ -53,6 +53,7 @@ void MatMulTransformation::transform(TransformationContext &context, ngraph::pat
     replace_node(matMul, newMultiply);
 
     updateOutput(context, newMultiply, matMul);
+    return true;
 }
 
 void MatMulTransformation::registerMatcherIn(GraphRewrite& pass, TransformationContext& context) const {

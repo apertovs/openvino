@@ -68,11 +68,11 @@ void MVNTransformation::registerMatcherIn(GraphRewrite& pass, TransformationCont
         make_op_pattern<ngraph::op::MVN>({ make_op_label<ngraph::opset1::Multiply>() }));
 }
 
-void MVNTransformation::transform(TransformationContext &context, ngraph::pattern::Matcher &m) const {
+bool MVNTransformation::transform(TransformationContext &context, ngraph::pattern::Matcher &m) const {
     std::shared_ptr<Node> operation = m.get_match_root();
     if (!canBeTransformed(context, operation)) {
         fuseConvertIfPossible(operation);
-        return;
+        return false;
     }
 
     auto mvn = as_type_ptr<op::MVN>(separateInStandaloneBranch(operation));
@@ -119,4 +119,5 @@ void MVNTransformation::transform(TransformationContext &context, ngraph::patter
     replace_node(mvn, newMultiply);
 
     updateOutput(context, newMultiply, newMVN);
+    return true;
 }

@@ -24,9 +24,9 @@ void SqueezeTransformation::registerMatcherIn(GraphRewrite &pass, Transformation
         make_op_pattern<opset1::Squeeze>({ make_op_label<opset1::Multiply>(), make_op_label<opset1::Constant>() }));
 }
 
-void SqueezeTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
+bool SqueezeTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
     if (!LayerTransformation::canBeTransformed(context, m.get_match_root())) {
-        return;
+        return false;
     }
 
     auto squeezeOnConstant = [](const std::shared_ptr<ngraph::Node>& squeeze,
@@ -53,6 +53,7 @@ void SqueezeTransformation::transform(TransformationContext& context, ngraph::pa
     }
 
     moveDequantizationAfter(context, squeeze, dequantization, false);
+    return true;
 }
 
 
