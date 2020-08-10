@@ -670,23 +670,6 @@ NetworkHelper::InsertDequantizationResult NetworkHelper::moveDequantizationAfter
     newOperation->set_friendly_name(operation->get_friendly_name());
     // copyInfo(operation, newOperation);
 
-    const bool shouldConvert = (newOperation->get_output_element_type(0) != dequantization.multiply->get_output_element_type(0));
-    const std::shared_ptr<ngraph::opset1::Convert> convert = (updatePrecision || shouldConvert) ? dequantization.convert : nullptr;
-
-    auto parent = newOperation;
-    if (convert != nullptr) {
-        parent = std::make_shared<opset1::Convert>(parent, convert->get_output_element_type(0));
-    }
-    if (dequantization.subtract != nullptr) {
-        auto subtractConstant = dequantization.subtract->get_input_node_shared_ptr(1);
-        parent = std::make_shared<opset1::Subtract>(parent, subtractConstant);
-    }
-    if (dequantization.multiply != nullptr) {
-        auto multiplyConstant = dequantization.multiply->get_input_node_shared_ptr(1);
-        parent = std::make_shared<opset1::Multiply>(parent, multiplyConstant);
-    }
-    replace_node(operation, parent);
-
     if (updatePrecision) {
         // TODO: refactor
         auto op = std::dynamic_pointer_cast<ngraph::op::TypeRelaxedBase>(newOperation);
@@ -699,7 +682,24 @@ NetworkHelper::InsertDequantizationResult NetworkHelper::moveDequantizationAfter
         // NetworkHelper::setOutDataPrecision(op, newOperation->get_input_element_type(0));
     }
 
+    const bool shouldConvert = (newOperation->get_output_element_type(0) != dequantization.multiply->get_output_element_type(0));
+
+    auto parent = newOperation;
+    if (shouldConvert) {
+        parent = std::make_shared<opset1::Convert>(parent, dequantization.convert->get_output_element_type(0));
+    }
+    if (dequantization.subtract != nullptr) {
+        auto subtractConstant = dequantization.subtract->get_input_node_shared_ptr(1);
+        parent = std::make_shared<opset1::Subtract>(parent, subtractConstant);
+    }
+    if (dequantization.multiply != nullptr) {
+        auto multiplyConstant = dequantization.multiply->get_input_node_shared_ptr(1);
+        parent = std::make_shared<opset1::Multiply>(parent, multiplyConstant);
+    }
+    replace_node(operation, parent);
+
     return InsertDequantizationResult(newOperation, parent);
+
 }
 
 NetworkHelper::InsertDequantizationResult NetworkHelper::moveMultiplyAfter(
