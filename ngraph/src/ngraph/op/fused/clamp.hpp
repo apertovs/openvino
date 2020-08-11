@@ -34,7 +34,7 @@ namespace ngraph
             class NGRAPH_API Clamp : public ngraph::op::util::FusedOp
             {
             public:
-				NGRAPH_RTTI_DECLARATION;
+                NGRAPH_RTTI_DECLARATION;
 
                 Clamp() = default;
                 /// \brief Constructs a Clamp node.
@@ -56,7 +56,7 @@ namespace ngraph
                 double get_min() const { return m_min; }
                 double get_max() const { return m_max; }
                 bool evaluate(const HostTensorVector& outputs,
-                              const HostTensorVector& inputs) override;
+                              const HostTensorVector& inputs) const override;
 
             private:
                 double m_min;

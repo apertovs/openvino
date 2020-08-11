@@ -53,15 +53,14 @@ namespace ngraph
                     clone_with_new_inputs(const OutputVector& new_args) const override;
 
                 bool evaluate(const HostTensorVector& outputs,
-                              const HostTensorVector& inputs) override;
+                              const HostTensorVector& inputs) const override;
 
                 bool get_transpose_a() const { return m_transpose_a; }
                 bool get_transpose_b() const { return m_transpose_b; }
-
-				// TODO: workaround
-				void set_output_type(size_t i,
-					const element::Type& element_type,
-					const PartialShape& pshape) override;
+                // TODO: workaround
+                void set_output_type(size_t i,
+                                     const element::Type& element_type,
+                                     const PartialShape& pshape) override;
 
             private:
                 bool m_transpose_a;

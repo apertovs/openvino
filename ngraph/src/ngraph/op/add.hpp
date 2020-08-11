@@ -58,7 +58,7 @@ namespace ngraph
 
                 bool visit_attributes(AttributeVisitor& visitor) override;
                 bool evaluate(const HostTensorVector& outputs,
-                              const HostTensorVector& inputs) override;
+                              const HostTensorVector& inputs) const override;
             };
         } // namespace v0
 
@@ -90,7 +90,8 @@ namespace ngraph
                 ///
                 Add(const Output<Node>& arg0,
                     const Output<Node>& arg1,
-                    const AutoBroadcastSpec& auto_broadcast = AutoBroadcastSpec(AutoBroadcastType::NUMPY),
+                    const AutoBroadcastSpec& auto_broadcast =
+                        AutoBroadcastSpec(AutoBroadcastType::NUMPY),
                     const bool multi_type = BinaryElementwiseArithmetic::multi_type_global);
 
                 std::shared_ptr<Node>
@@ -98,7 +99,7 @@ namespace ngraph
                 bool visit_attributes(AttributeVisitor& visitor) override;
                 size_t get_version() const override { return 1; }
                 bool evaluate(const HostTensorVector& outputs,
-                              const HostTensorVector& inputs) override;
+                              const HostTensorVector& inputs) const override;
             };
 
         } // namespace v1
