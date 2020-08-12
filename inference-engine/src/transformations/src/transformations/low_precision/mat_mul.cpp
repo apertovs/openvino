@@ -16,11 +16,10 @@ using namespace ngraph::pass;
 using namespace ngraph::pass::low_precision;
 
 bool MatMulTransformation::transform(TransformationContext &context, ngraph::pattern::Matcher &m) const {
-    std::shared_ptr<ngraph::Node> matMul = m.get_match_root();
-    if (!canBeTransformed(context, matMul)) {
+    std::shared_ptr<ngraph::opset1::MatMul> matMul = as_type_ptr<ngraph::opset1::MatMul>(m.get_match_root());
+    if ((matMul == nullptr) || !canBeTransformed(context, matMul)) {
         return false;
     }
-
     matMul = as_type_ptr<ngraph::opset1::MatMul>(separateInStandaloneBranch(matMul));
 
     FakeQuantizeDequantization dequantization2 = ngraph::pass::low_precision::NetworkHelper::getDequantization(matMul, 1);
