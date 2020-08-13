@@ -28,6 +28,10 @@ bool DepthToSpaceTransformation::transform(TransformationContext &context, ngrap
     return true;
 }
 
+bool DepthToSpaceTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept {
+    return true;
+}
+
 bool DepthToSpaceTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> layer) const {
     // TODO: change when getDequantization will be expanded
     FakeQuantizeDequantization dequantization = NetworkHelper::getDequantization(layer);

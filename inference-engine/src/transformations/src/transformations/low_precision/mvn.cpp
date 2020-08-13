@@ -121,3 +121,7 @@ bool MVNTransformation::transform(TransformationContext &context, ngraph::patter
     updateOutput(context, newMultiply, newMVN);
     return true;
 }
+
+bool MVNTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept {
+    return false;
+}

@@ -56,6 +56,9 @@ bool SqueezeTransformation::transform(TransformationContext& context, ngraph::pa
     return true;
 }
 
+bool SqueezeTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept {
+    return true;
+}
 
 } // namespace low_precision
 } // namespace pass

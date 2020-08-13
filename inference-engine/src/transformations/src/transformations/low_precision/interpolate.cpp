@@ -33,6 +33,10 @@ bool InterpolateTransformation::transform(TransformationContext &context, ngraph
     return true;
 }
 
+bool InterpolateTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept {
+    return false;
+}
+
 bool InterpolateTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> layer) const {
     // TODO: expand transformation cases
     // just repeat CNNNetwork Resample transformation
