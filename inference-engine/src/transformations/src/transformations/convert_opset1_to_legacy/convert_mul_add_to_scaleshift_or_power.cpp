@@ -75,15 +75,22 @@ void ngraph::pass::ConvertMulAddToScaleShiftOrPower::convert_mul_add_to_scaleshi
             return false;
         }
 
+        auto add_type_info = add_node->get_rt_info();
+        bool add_should_scale = (add_type_info.find("ScaleShiftIE") != add_type_info.end());
+
         auto add_input_0 = add_node->input(0).get_source_output().get_node_shared_ptr();
         auto add_input_1 = add_node->input(1).get_source_output().get_node_shared_ptr();
 
         auto mul_node = ngraph::as_type_ptr<ngraph::opset1::Multiply>(add_input_0);
+
         auto const_bias_node = ngraph::as_type_ptr<ngraph::opset1::Constant>(add_input_1);
         if (!mul_node) {
             mul_node = ngraph::as_type_ptr<ngraph::opset1::Multiply>(add_input_1);
             const_bias_node = ngraph::as_type_ptr<ngraph::opset1::Constant>(add_input_0);
         }
+
+        auto mul_type_info = mul_node->get_rt_info();
+        bool mul_should_scale = (mul_type_info.find("ScaleShiftIE") != mul_type_info.end());
 
         auto mul_input_0 = mul_node->input(0).get_source_output().get_node_shared_ptr();
         auto mul_input_1 = mul_node->input(1).get_source_output().get_node_shared_ptr();
@@ -141,7 +148,7 @@ void ngraph::pass::ConvertMulAddToScaleShiftOrPower::convert_mul_add_to_scaleshi
         }
 
         // TODO: in case if scale and shift constants has equal values the best way is to convert them to Power
-        if (res1 == CONVERSION_RESULT::SCALE_SHIFT || res2 == CONVERSION_RESULT::SCALE_SHIFT) {
+        if (res1 == CONVERSION_RESULT::SCALE_SHIFT || res2 == CONVERSION_RESULT::SCALE_SHIFT || add_should_scale || mul_should_scale) {
             NodeVector new_ops;
 
             auto weights_in = ngraph::op::util::normalize_constant(const_weights_node, output_shape);
