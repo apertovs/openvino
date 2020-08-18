@@ -107,15 +107,11 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
                 std::vector<element::Type>{element::f32, element::f32}, std::vector<element::Type>{},
                 ngraph::op::TemporaryReplaceOutputType(lastNew, element::f32).get(),
                 ngraph::op::TemporaryReplaceOutputType(multiplyConstant, element::f32).get());
-            
+
             NetworkHelper::setOutDataPrecision(as_type_ptr<opset1::Multiply>(lastNew), precisionAfterDequantization);
         } else {
             lastNew = std::make_shared<opset1::Multiply>(lastNew, multiplyConstant);
         }
-
-        // Add empty parameter ScaleShiftIE for multiplication operation
-        lastNew->get_rt_info()["ScaleShiftIE"] = std::make_shared<VariantWrapper<std::string>>("Exist");
-
 
         if (dequantization.multiply != nullptr) {
             NetworkHelper::copyInfo(dequantization.multiply, lastNew);
@@ -150,10 +146,6 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
         } else {
             lastNew = std::make_shared<opset1::Add>(lastNew, subtractConstant);
         }
-
-        // Add empty parameter ScaleShiftIE for add operation
-        lastNew->get_rt_info()["ScaleShiftIE"] = std::make_shared<VariantWrapper<std::string>>("Exist");
-
 
         if (dequantization.subtract != nullptr) {
             NetworkHelper::copyInfo(dequantization.subtract, lastNew);
