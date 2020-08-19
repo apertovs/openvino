@@ -104,7 +104,7 @@ bool ConcatMultiChannelsTransformation::transform(TransformationContext& context
             }
 
             if (tmp.precision != dataPrecision.precision) {
-                return;
+                return false;
             }
         }
         precision = dataPrecision.precision;
