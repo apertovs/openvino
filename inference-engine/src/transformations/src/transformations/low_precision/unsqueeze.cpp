@@ -25,7 +25,7 @@ void UnsqueezeTransformation::registerMatcherIn(GraphRewrite &pass, Transformati
 }
 
 bool UnsqueezeTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher &m) const {
-    if (!LayerTransformation::canBeTransformed(context, m.get_match_root())) {
+    if (!canBeTransformed(context, m.get_match_root())) {
         return false;
     }
 

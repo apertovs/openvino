@@ -18,7 +18,7 @@ void SplitTransformation::registerMatcherIn(GraphRewrite& pass, TransformationCo
 }
 
 bool SplitTransformation::transform(TransformationContext& context, ngraph::pattern::Matcher& m) const {
-    if (!LayerTransformation::canBeTransformed(context, m.get_match_root())) {
+    if (!canBeTransformed(context, m.get_match_root())) {
         return false;
     }
 

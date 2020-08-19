@@ -97,7 +97,7 @@ bool AddTransformation::transform(TransformationContext& context, ngraph::patter
     }
 
     NetworkHelper::copyInfo(add, newAdd);
-    updateOutput(context, newMultiply, add);
+    updateOutput(context, newMultiply, newAdd);
     return true;
 }
 
