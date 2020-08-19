@@ -60,6 +60,10 @@ bool UnsqueezeTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) 
     return true;
 }
 
+bool UnsqueezeTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> layer) const {
+    return (!NetworkHelper::getDequantization(layer).empty()) && LayerTransformation::canBeTransformed(context, layer);
+}
+
 
 } // namespace low_precision
 } // namespace pass

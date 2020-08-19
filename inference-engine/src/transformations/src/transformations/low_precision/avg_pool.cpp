@@ -34,6 +34,16 @@ bool AvgPoolTransformation::transform(TransformationContext& context, ngraph::pa
     return true;
 }
 
+bool AvgPoolTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> operation) const {
+    if (!LayerTransformation::canBeTransformed(context, operation)) {
+        return false;
+    }
+
+    auto dequantization = NetworkHelper::getDequantization(operation);
+
+    return !!dequantization.multiply;
+}
+
 bool AvgPoolTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept {
     return false;
 }

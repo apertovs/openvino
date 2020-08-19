@@ -86,10 +86,10 @@ protected:
 };
 
 TEST_P(ReluTransformation, CompareFunctions) {
-     InitNodeInfo().run_on_function(actualFunction);
-     actualFunction->validate_nodes_and_infer_types();
-     auto res = compare_functions(referenceFunction, actualFunction);
-     ASSERT_TRUE(res.first) << res.second;
+    InitNodeInfo().run_on_function(actualFunction);
+    actualFunction->validate_nodes_and_infer_types();
+    auto res = compare_functions(referenceFunction, actualFunction, true, true);
+    ASSERT_TRUE(res.first) << res.second;
 }
 
 const std::vector<ngraph::Shape> shapes = {
@@ -170,6 +170,36 @@ const std::vector<ReluTransformationTestValues> testValues = {
             {{ngraph::element::f32}, { {-128}, ngraph::element::f32 }, {}},
             ngraph::element::f32,
             {{}, {}, {0.1f}}
+        }
+    },
+    // U8: empty
+    {
+        ngraph::Shape({ 1, 3, 16, 16 }),
+        LayerTransformation::createParamsU8I8(),
+        {
+            ngraph::element::u8,
+            {}
+        },
+        {
+            ngraph::element::u8,
+            {},
+            ngraph::element::u8,
+            {}
+        }
+    },
+    // FP32: empty
+    {
+        ngraph::Shape({ 1, 3, 16, 16 }),
+        LayerTransformation::createParamsU8I8(),
+        {
+            ngraph::element::f32,
+            {}
+        },
+        {
+            ngraph::element::f32,
+            {},
+            ngraph::element::f32,
+            {}
         }
     }
 };

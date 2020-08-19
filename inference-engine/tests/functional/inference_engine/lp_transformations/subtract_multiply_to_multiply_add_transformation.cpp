@@ -90,7 +90,7 @@ public:
 
 TEST_P(SubtractMultiplyToMultiplyAddTransformation, CompareFunctions) {
     actualFunction->validate_nodes_and_infer_types();
-    auto res = compare_functions(referenceFunction, actualFunction, true);
+    auto res = compare_functions(referenceFunction, actualFunction, true, true);
     ASSERT_TRUE(res.first) << res.second;
 }
 
@@ -161,6 +161,23 @@ const std::vector<SubtractMultiplyToMultiplyAddTransformationTestValues> testVal
             ngraph::element::u8,
             {{0.1f, 0.1f, 0.1f}, {ngraph::element::f32}},
             {{-12.8f, -12.8f, -12.8f}, {ngraph::element::f32}}
+        },
+    },
+    // empty
+    {
+        {1, 3, 299, 299},
+        LayerTransformation::createParamsU8I8(),
+        {
+            ngraph::element::f32,
+            {},
+            ngraph::element::f32,
+        },
+        {
+            ngraph::element::f32,
+            {},
+            ngraph::element::f32,
+            {},
+            {}
         },
     },
 };

@@ -63,7 +63,6 @@ bool ReshapeTransformation::transform(TransformationContext& context, ngraph::pa
     }
 
     reshape = separateInStandaloneBranch(reshape);
-
     reshapeDequantizationConstant(reshape);
     moveDequantizationAfter(context, reshape, NetworkHelper::getDequantization(reshape, 0), false);
     return true;
@@ -94,7 +93,10 @@ size_t getFirstChangedChannel(const Shape& shape1, const Shape& shape2) {
 }
 
 bool ReshapeTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> op) const {
-    const FakeQuantizeDequantization dequantization = NetworkHelper::getDequantization(op, 0);
+    const FakeQuantizeDequantization dequantization = NetworkHelper::getDequantization(op);
+    if (dequantization.empty()) {
+        return false;
+    }
 
     const Shape subtractShape = dequantization.subtract == nullptr ? Shape{} : dequantization.subtract->get_input_node_ptr(1)->get_output_shape(0);
     const Shape multiplyShape = dequantization.multiply == nullptr ? Shape{} : dequantization.multiply->get_input_node_ptr(1)->get_output_shape(0);
@@ -102,10 +104,12 @@ bool ReshapeTransformation::canBeTransformed(const TransformationContext& contex
         return true;
     }
 
-    const size_t index = NetworkHelper::getInputIndex(op->get_input_node_shared_ptr(0), op);
-    const auto inputShape = op->get_input_node_shared_ptr(0)->get_output_shape(index);
     const auto outputShape = op->get_output_shape(0);
+    if ((outputShape.size() != 4ul) && (outputShape.size() != 5ul)) {
+        return false;
+    }
 
+    const auto inputShape = op->get_input_shape(0);
     Shape subtractShapeWithBatch = subtractShape;
     if ((dequantization.subtract != nullptr) && (subtractShapeWithBatch.size() < inputShape.size())) {
         subtractShapeWithBatch.insert(subtractShapeWithBatch.begin(), inputShape[0]);

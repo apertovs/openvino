@@ -26,9 +26,8 @@ void ConvolutionTransformation::registerMatcherIn(GraphRewrite &pass, Transforma
         make_op_pattern<opset1::Convolution>({ make_op_label<opset1::Multiply>(), make_op_label<opset1::FakeQuantize>()}));
 }
 
-size_t handledCount = 0;
-
 bool ConvolutionTransformation::transform(TransformationContext &context, ngraph::pattern::Matcher &m) const {
+
     auto convolution = m.get_match_root();
 
     if (!WeightableLayerTransformation::canBeTransformed(context, convolution)) {
@@ -103,13 +102,19 @@ bool ConvolutionTransformation::transform(TransformationContext &context, ngraph
                     outputScales);
             }
         } else {
-            // workaround: constant is cloning because it's used twice and can not be fused below
-            newMultiplyAfterConst = dequantization.multiply->input_value(1).get_node_shared_ptr()->clone_with_new_inputs({});
+            std::shared_ptr<opset1::Constant> reducedConstant = as_type_ptr<opset1::Constant>(
+                dequantization.multiply->input_value(1).get_node_shared_ptr());
+            newMultiplyAfterConst = std::make_shared<opset1::Constant>(
+                reducedConstant->get_output_element_type(0),
+                Shape{ 1 },
+                reducedConstant->cast_vector<float>()[0]);
         }
 
-        std::shared_ptr<ngraph::opset1::Multiply> newMultiplyAfter = std::make_shared<opset1::Multiply>(
-            convolution->copy_with_new_inputs({ dequantization.multiply->input_value(0), convolution->input_value(1) }),
-            newMultiplyAfterConst);
+        auto newConvolution = convolution->copy_with_new_inputs({ dequantization.multiply->input_value(0), convolution->input_value(1) });
+        std::shared_ptr<ngraph::opset1::Multiply> newMultiplyAfter = std::make_shared<op::TypeRelaxed<opset1::Multiply>>(
+            std::vector<element::Type>{ element::f32, element::f32 }, std::vector<element::Type>{ element::f32 },
+            ngraph::op::TemporaryReplaceOutputType(newConvolution, element::f32).get(),
+            ngraph::op::TemporaryReplaceOutputType(newMultiplyAfterConst, element::f32).get());
 
         replace_node(convolution, newMultiplyAfter);
         convolution = newMultiplyAfter->input_value(0).get_node_shared_ptr();
@@ -132,9 +137,6 @@ bool ConvolutionTransformation::transform(TransformationContext &context, ngraph
             convolution->input_value(1).get_node_shared_ptr() :
             convolution->get_input_node_ptr(1)->get_input_node_shared_ptr(0));
         std::shared_ptr<opset1::Subtract> subtractFromWeights = as_type_ptr<opset1::Subtract>(multiplyFromWeights->get_input_node_shared_ptr(0));
-        std::shared_ptr<opset1::Convert> convertFromWeights = as_type_ptr<opset1::Convert>(subtractFromWeights == nullptr ?
-            multiplyFromWeights->get_input_node_shared_ptr(0) :
-            subtractFromWeights->get_input_node_shared_ptr(0));
 
         {
             Shape newScaleShape = multiplyFromWeights->get_input_shape(1);
@@ -163,8 +165,25 @@ bool ConvolutionTransformation::transform(TransformationContext &context, ngraph
         }
 
         if (subtractFromWeights != nullptr) {
-            NetworkHelper::optimizeSubtract(subtractFromWeights);
+            auto optimizedSubtract = NetworkHelper::optimizeSubtract(subtractFromWeights);
+            // TODO: handle optimizedSubtract == nullptr;
+            if (optimizedSubtract != nullptr) {
+                subtractFromWeights = as_type_ptr<opset1::Subtract>(optimizedSubtract);
+
+                const Shape weightsShape = subtractFromWeights->input(1).get_shape();
+                Shape zeroPointShape(weightsShape.size(), 1ul);
+                zeroPointShape[0] = weightsShape[0];
+
+                auto zeroPointConstant = fold<opset1::Broadcast>(
+                    subtractFromWeights->get_input_node_shared_ptr(1),
+                    std::make_shared<opset1::Constant>(element::i32, Shape{ zeroPointShape.size() }, zeroPointShape));
+                replace_node(subtractFromWeights->get_input_node_shared_ptr(1), zeroPointConstant);
+            }
         }
+
+        std::shared_ptr<opset1::Convert> convertFromWeights = as_type_ptr<opset1::Convert>(subtractFromWeights == nullptr ?
+            multiplyFromWeights->get_input_node_shared_ptr(0) :
+            subtractFromWeights->get_input_node_shared_ptr(0));
 
         if (convertFromWeights != nullptr) {
             std::shared_ptr<Node> childNode = reshapeFromWeights == nullptr ? convolution : reshapeFromWeights;
@@ -193,6 +212,12 @@ bool ConvolutionTransformation::transform(TransformationContext &context, ngraph
         convolution->output(0).get_target_inputs().begin()->get_node()->shared_from_this());
 
     updateOutput(context, finalDequantization, convolution);
+
+    auto onWeights = convolution->get_input_node_shared_ptr(1);
+    if (is_type<opset1::Subtract>(onWeights)) {
+        auto& rt = onWeights->get_rt_info();
+        rt["DISABLED_CONSTANT_FOLDING"];
+    }
     return true;
 }
 

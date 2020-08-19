@@ -184,11 +184,16 @@ std::shared_ptr<Node> NetworkHelper::swapMultiplyAndAdd(std::shared_ptr<opset1::
     auto b = addAfterMultiply->get_input_node_shared_ptr(multiplyBranch == 0 ? 1 : 0);
     auto bDivA = fold<opset1::Divide>(b, a);
 
+    std::vector<std::shared_ptr<Node>> inputs{ {}, {} };
+
+    inputs[multiplyBranch] = x;
+    inputs[multiplyBranch == 0 ? 1 : 0] = bDivA;
+
     std::shared_ptr<opset1::Add> newAdd = std::make_shared<op::TypeRelaxed<opset1::Add>>(
         std::vector<element::Type>{element::f32, element::f32}, std::vector<element::Type>{ element::f32 },
-        ngraph::op::TemporaryReplaceOutputType(x, element::f32).get(),
-        ngraph::op::TemporaryReplaceOutputType(bDivA, element::f32).get());
-    NetworkHelper::setOutDataPrecision(newAdd, addAfterMultiply->get_output_element_type(multiplyBranch));
+        ngraph::op::TemporaryReplaceOutputType(inputs[0], element::f32).get(),
+        ngraph::op::TemporaryReplaceOutputType(inputs[1], element::f32).get());
+    NetworkHelper::setOutDataPrecision(newAdd, addAfterMultiply->get_output_element_type(0));
 
     auto newMultiply = std::make_shared<opset1::Multiply>(newAdd, a);
     replace_node(addAfterMultiply, newMultiply);
@@ -257,23 +262,129 @@ std::shared_ptr<opset1::Constant> NetworkHelper::roundWithTolerance(std::shared_
         return castedConstant;
     }
 
-    castedConstant = as_type_ptr<opset1::Constant>(fold<opset1::Convert>(fold<opset1::Add>(constant,
-        std::make_shared<opset1::Constant>(constant->get_output_element_type(0), Shape{ 1 }, 0.5f)), target_type));
-    castedValues = castedConstant->cast_vector<float>();
+    auto round = [](
+        const std::shared_ptr<opset1::Constant>& constant,
+        element::Type target_type,
+        float tolerance,
+        std::vector<float>& values,
+        float increaseValue) -> std::shared_ptr<opset1::Constant> {
+        const auto castedConstant = as_type_ptr<opset1::Constant>(fold<opset1::Convert>(
+            fold<opset1::Add>(constant, std::make_shared<opset1::Constant>(constant->get_output_element_type(0), Shape{ 1 }, increaseValue)),
+            target_type));
+        const auto castedValues = castedConstant->cast_vector<float>();
+        if (std::equal(values.begin(), values.end(), castedValues.begin(), [tolerance](float a, float b) { return fabs(a - b) < tolerance; })) {
+            return castedConstant;
+        }
 
-    if (std::equal(values.begin(), values.end(), castedValues.begin(), [tolerance](float a, float b) { return fabs(a - b) < tolerance; })) {
+        return nullptr;
+    };
+
+    castedConstant = round(constant, target_type, tolerance, values, 0.5f);
+    if (castedConstant != nullptr) {
         return castedConstant;
     }
 
-    castedConstant = as_type_ptr<opset1::Constant>(fold<opset1::Convert>(fold<opset1::Add>(constant,
-        std::make_shared<opset1::Constant>(constant->get_output_element_type(0), Shape{ 1 }, 1.f)), target_type));
-    castedValues = castedConstant->cast_vector<float>();
+    castedConstant = round(constant, target_type, tolerance, values, -0.5f);
+    if (castedConstant != nullptr) {
+        return castedConstant;
+    }
 
-    if (std::equal(values.begin(), values.end(), castedValues.begin(), [tolerance](float a, float b) { return fabs(a - b) < tolerance; })) {
+    castedConstant = round(constant, target_type, tolerance, values, 1.f);
+    if (castedConstant != nullptr) {
         return castedConstant;
     }
 
     return constant;
+}
+
+std::shared_ptr<Node> NetworkHelper::fold_fake_quantize(const std::shared_ptr<opset1::FakeQuantize>& fq, const bool roundValues) {
+    if (is_type<opset1::Constant>(fq->get_input_node_shared_ptr(0)) &&
+        is_type<opset1::Constant>(fq->get_input_node_shared_ptr(1)) &&
+        is_type<opset1::Constant>(fq->get_input_node_shared_ptr(2)) &&
+        is_type<opset1::Constant>(fq->get_input_node_shared_ptr(3)) &&
+        is_type<opset1::Constant>(fq->get_input_node_shared_ptr(4)) &&
+        op::util::constantIsEqualTo(as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(1)), 0.f) &&
+        op::util::constantIsEqualTo(as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(2)), 254.f) &&
+        op::util::constantIsEqualTo(as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(3)), -127.f) &&
+        op::util::constantIsEqualTo(as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(4)), 127.f)) {
+        return fold<opset1::Add>(fq->input_value(0), fq->input_value(3));
+    }
+
+    auto constant = as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(0));
+
+    if (constant) {
+        Shape constShape = fq->get_output_shape(0);
+        if (constShape.empty() || constShape.size() > 5lu) {
+            THROW_IE_LPT_EXCEPTION(*fq) << "Unexpected dimensions count " << constShape.size();
+        }
+
+        // OIDHW
+        const size_t OC = constShape[0];
+        const size_t IC = constShape.size() > 1lu ? constShape[1] : 1;
+        const size_t D = constShape.size() > 4lu ? constShape[constShape.size() - 3] : 1;
+        const size_t H = constShape.size() > 2lu ? constShape.size() == 3lu ? constShape[2] : constShape[constShape.size() - 2] : 1;
+        const size_t W = constShape.size() > 3lu ? constShape[constShape.size() - 1] : 1;
+
+        const auto inputLowValues = as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(1))->cast_vector<float>();
+        const auto inputHighValues = as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(2))->cast_vector<float>();
+        const auto outputLowValues = as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(3))->cast_vector<float>();
+        const auto outputHighValues = as_type_ptr<opset1::Constant>(fq->get_input_node_shared_ptr(4))->cast_vector<float>();
+
+        const size_t inputLowSize = inputLowValues.size();
+        const size_t inputHighSize = inputHighValues.size();
+        const size_t outputLowSize = outputLowValues.size();
+        const size_t outputHighSize = outputHighValues.size();
+
+        const bool isInputLowBroadcasted = inputLowSize != OC;
+        if ((inputLowSize != 1) && (inputLowSize != OC)) {
+            THROW_IE_LPT_EXCEPTION(*fq) << "Unexpected input low values count " << inputLowSize << " for " << OC << " channels";
+        }
+        const bool isInputHighBroadcasted = inputHighSize != OC;
+        if ((inputHighSize != 1) && (inputHighSize != OC)) {
+            THROW_IE_LPT_EXCEPTION(*fq) << "Unexpected input high values count " << inputHighSize << " for " << OC << " channels";
+        }
+        const bool isOutputLowBroadcasted = outputLowSize != OC;
+        if ((outputLowSize != 1) && (outputLowSize != OC)) {
+            THROW_IE_LPT_EXCEPTION(*fq) << "Unexpected output low values count " << outputLowSize << " for " << OC << " channels";
+        }
+        const bool isOutputHighBroadcasted = outputHighSize != OC;
+        if ((outputHighSize != 1) && (outputHighSize != OC)) {
+            THROW_IE_LPT_EXCEPTION(*fq) << "Unexpected output high values count " << outputHighSize << " for " << OC << " channels";
+        }
+
+        auto levels_1 = fq->get_levels() - 1.f;
+
+        //const size_t DHW = D * H * W;
+        const size_t IDHW = IC * D * H * W;
+
+        const auto values = constant->cast_vector<float>();
+        std::vector<float> quantizedValues(OC * IC * D * H * W);
+
+        for (int oc = 0; oc < OC; ++oc) {
+            for (int iidx = 0; iidx < IDHW; ++iidx) {
+                const float inputLow = inputLowValues[isInputLowBroadcasted ? 0 : oc];
+                const float inputHigh = inputHighValues[isInputHighBroadcasted ? 0 : oc];
+                const float outputLow = outputLowValues[isOutputLowBroadcasted ? 0 : oc];
+                const float outputHigh = outputHighValues[isOutputHighBroadcasted ? 0 : oc];
+
+                const size_t idx = oc * IDHW + iidx;
+
+                if (values[idx] <= inputLow) {
+                    quantizedValues[idx] = roundValues ? std::roundf(outputLow) : outputLow;
+                } else if (values[idx] > inputHigh) {
+                    quantizedValues[idx] = roundValues ? std::roundf(outputHigh) : outputHigh;
+                } else {
+                    const float value = std::roundf((values[idx] - inputLow) / (inputHigh - inputLow) * levels_1) /
+                        levels_1 * (outputHigh - outputLow) + outputLow;
+                    quantizedValues[idx] = roundValues ? std::roundf(value) : value;
+                }
+            }
+        }
+
+        return std::make_shared<opset1::Constant>(fq->get_output_element_type(0), constShape, quantizedValues);
+    }
+
+    return fq;
 }
 
 // Decompose FakeQuantize to FakeQuantize with output integer limits (quantize), dequatized MultiplyAdd
@@ -306,14 +417,14 @@ std::tuple<std::shared_ptr<Node>, std::shared_ptr<Node>> NetworkHelper::decompos
 
     // Build a substitution sub-graph:
 
-    std::shared_ptr<ngraph::Node> newFQ = fold_fake_quantize<opset1::FakeQuantize>(
-            fq->input_value(0),
-            fq->input_value(1),
-            fq->input_value(2),
-            newMin->output(0),
-            newMax->output(0),
-            fq->get_levels(),
-            fq->get_auto_broadcast());
+    std::shared_ptr<ngraph::Node> newFQ = fold_fake_quantize(std::make_shared<op::TypeRelaxed<opset1::FakeQuantize>>(
+        fq->input_value(0),
+        fq->input_value(1),
+        fq->input_value(2),
+        newMin->output(0),
+        newMax->output(0),
+        fq->get_levels(),
+        fq->get_auto_broadcast()));
     // TODO: for debuging only - remove later
     newFQ->set_friendly_name(fq->get_friendly_name() + "_original");
 
@@ -336,13 +447,11 @@ std::tuple<std::shared_ptr<Node>, std::shared_ptr<Node>> NetworkHelper::decompos
             convert = fold<opset1::Convert>(newFQ, precision);
         } else if (is_type<opset1::FakeQuantize>(newFQ)) {
             newFQ = setOutDataPrecision(as_type_ptr<opset1::FakeQuantize>(newFQ), precision);
-            auto type = newFQ->get_output_element_type(0);
             convert = newFQ;
         } else {
             THROW_IE_LPT_EXCEPTION(*newFQ) << "unexpected operation type";
         }
 
-        auto pre = fq->get_output_element_type(0);
         convert2 = make_shared<opset1::Convert>(convert, fq->get_output_element_type(0));
     }
 
@@ -639,15 +748,13 @@ NetworkHelper::InsertDequantizationResult NetworkHelper::moveDequantizationAfter
     // copyInfo(operation, newOperation);
 
     if (updatePrecision) {
-        // TODO: refactor
+        // NetworkHelper::setOutDataPrecision(op, newOperation->get_input_element_type(0));
         auto op = std::dynamic_pointer_cast<ngraph::op::TypeRelaxedBase>(newOperation);
         if (op == nullptr) {
-            // TODO: handle error
+            THROW_IE_LPT_EXCEPTION(*newOperation) << "not possible to update precision for not type relaxed operation";
         }
         op->set_overridden_output_type(newOperation->get_input_element_type(0));
         std::dynamic_pointer_cast<ngraph::Node>(newOperation)->validate_and_infer_types();
-
-        // NetworkHelper::setOutDataPrecision(op, newOperation->get_input_element_type(0));
     }
 
     const bool shouldConvert = (newOperation->get_output_element_type(0) != dequantization.multiply->get_output_element_type(0));
@@ -706,9 +813,7 @@ NetworkHelper::InsertDequantizationResult NetworkHelper::moveMultiplyAfter(
 void NetworkHelper::removeConvertIfPossible(
     const std::shared_ptr<ngraph::Node>& operation,
     const FakeQuantizeDequantization& dequantization) {
-    const auto convertParent = dequantization.convert->get_input_node_shared_ptr(0);
-    const size_t convertIndex = getInputIndex(convertParent, dequantization.convert);
-    const element::Type precisionBeforeConvert = convertParent->get_output_element_type(convertIndex);
+    const element::Type precisionBeforeConvert = dequantization.convert->input(0).get_element_type();
 
     if (checkConstantValuePrecision(precisionBeforeConvert, dequantization.subtract->get_input_node_shared_ptr(1))) {
         auto newSubtract = dequantization.subtract->clone_with_new_inputs({
@@ -735,20 +840,12 @@ bool NetworkHelper::checkConstantValuePrecision(const element::Type expectedPrec
 }
 
 size_t NetworkHelper::getInputIndex(const std::shared_ptr<ngraph::Node>& parent, const std::shared_ptr<ngraph::Node>& child) {
-    bool inputIndexWasFound = false;
-    size_t inputIndex;
     for (size_t i = 0; i < child->get_input_size(); ++i) {
         if (parent.get() == child->get_input_node_ptr(i)) {
-            inputIndex = i;
-            inputIndexWasFound = true;
-            break;
+            return i;
         }
     }
-    if (!inputIndexWasFound) {
-        THROW_IE_LPT_EXCEPTION(*child) << " input index for " << parent->get_friendly_name() << " was not found";
-    }
-
-    return inputIndex;
+    THROW_IE_LPT_EXCEPTION(*child) << " input index for " << parent->get_friendly_name() << " was not found";
 }
 
 std::vector<Output<Node>> NetworkHelper::getInputs(const std::shared_ptr<ngraph::Node>& node) {

@@ -55,10 +55,14 @@ bool SplitTransformation::transform(TransformationContext& context, ngraph::patt
     std::vector<std::shared_ptr<ngraph::Node>> lastNodes(outputSize);
     ngraph::OutputVector replacement;
     for (size_t i = 0; i < outputSize; ++i) {
-        const std::shared_ptr<ngraph::Node> convert =
-            dequantization.convert->clone_with_new_inputs({ newSplit->output(i) });
+        Output<Node> previous = newSplit->output(i);
 
-        std::shared_ptr<ngraph::Node> subtract;
+        if (dequantization.convert != nullptr) {
+            const std::shared_ptr<ngraph::Node> convert =
+                dequantization.convert->clone_with_new_inputs({ newSplit->output(i) });
+            previous = convert;
+        }
+
         if (!subSplitLengths.empty()) {
             const auto newSubConstShape = getConstSplitShape(subSplitLengths, subConstShape, axis, i);
 
@@ -67,12 +71,23 @@ bool SplitTransformation::transform(TransformationContext& context, ngraph::patt
                 subValues.begin() + subSplitLengths[i + 1]);
 
             const auto subConst = std::make_shared<ngraph::opset1::Constant>(
-                dequantization.subtract->get_input_element_type(1), newSubConstShape, newSubValues);
-            subtract = dequantization.subtract ?
-                std::make_shared<ngraph::opset1::Subtract>(convert, subConst) : nullptr;
+                dequantization.subtract->get_input_element_type(1),
+                newSubConstShape,
+                newSubValues);
+
+            auto subtract = dequantization.subtract ? std::make_shared<ngraph::opset1::Subtract>(previous, subConst) : nullptr;
+            if (subtract != nullptr) {
+                previous = subtract;
+            }
         } else {
-            subtract = dequantization.subtract ? std::make_shared<ngraph::opset1::Subtract>(convert,
-                dequantization.subtract->get_input_node_shared_ptr(1)->clone_with_new_inputs({})) : nullptr;
+            auto subtract = dequantization.subtract ?
+                std::make_shared<ngraph::opset1::Subtract>(
+                    previous,
+                    dequantization.subtract->get_input_node_shared_ptr(1)->clone_with_new_inputs({})) :
+                nullptr;
+            if (subtract != nullptr) {
+                previous = subtract;
+            }
         }
 
         std::shared_ptr<ngraph::Node> multiply;
@@ -85,11 +100,10 @@ bool SplitTransformation::transform(TransformationContext& context, ngraph::patt
 
             auto mul_const = std::make_shared<ngraph::opset1::Constant>(
                 dequantization.multiply->get_input_element_type(1), newMulConstShape, newMulValues);
-            multiply = std::make_shared<ngraph::opset1::Multiply>(
-                dequantization.subtract ? subtract : convert, mul_const);
+            multiply = std::make_shared<ngraph::opset1::Multiply>(previous, mul_const);
         } else {
             multiply = std::make_shared<ngraph::opset1::Multiply>(
-                dequantization.subtract ? subtract : convert,
+                previous,
                 dequantization.multiply->get_input_node_shared_ptr(1)->clone_with_new_inputs({}));
         }
 
@@ -159,6 +173,11 @@ void SplitTransformation::updateOutputs(
 bool SplitTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept {
     return true;
 }
+
+bool SplitTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> layer) const {
+    return (!NetworkHelper::getDequantization(layer).empty()) && LayerTransformation::canBeTransformed(context, layer);
+}
+
 } // namespace low_precision
 } // namespace pass
 } // namespace ngraph

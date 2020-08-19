@@ -110,7 +110,7 @@ TEST_P(VariadicSplitTransformation, CompareFunctions) {
     InitNodeInfo().run_on_function(actualFunction);
     actualFunction->validate_nodes_and_infer_types();
 
-    auto res = compare_functions(referenceFunction, actualFunction, true);
+    auto res = compare_functions(referenceFunction, actualFunction, true, false);
     ASSERT_TRUE(res.first) << res.second;
 }
 
@@ -266,6 +266,20 @@ const std::vector<VariadicSplitTransformationTestValues> testValues = {
                     {{33.f, 44.f}, ngraph::element::f32, {1, 1, 2, 1}}
                 }
             }
+        }
+    },
+    {
+        ngraph::Shape({ 1, 3, 4, 4 }), std::int64_t{2}, std::vector<size_t>{ 2, 2 },
+        LayerTransformation::createParamsI8I8(),
+        // ActualValues
+        {
+            ngraph::element::i8,
+            {}
+        },
+        // ExpectedValues
+        {
+            ngraph::element::i8,
+            {}
         }
     },
 };

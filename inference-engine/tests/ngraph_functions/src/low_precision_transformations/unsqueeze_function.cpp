@@ -32,14 +32,18 @@ std::shared_ptr<ngraph::Function> UnsqueezeFunction::getOriginal(
         parent = subtract;
     }
 
-    const std::shared_ptr<ngraph::Node> multiply = std::make_shared<ngraph::opset1::Multiply>(
-        parent,
-        std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, values.mutliply.shape, values.mutliply.values));
-    parent = multiply;
+    if (!values.mutliply.values.empty()) {
+        const std::shared_ptr<ngraph::Node> multiply = std::make_shared<ngraph::opset1::Multiply>(
+            parent,
+            std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, values.mutliply.shape, values.mutliply.values));
+        parent = multiply;
+    }
 
     const std::shared_ptr<ngraph::Node> unsqueeze = std::make_shared<ngraph::opset1::Unsqueeze>(
         parent,
         std::make_shared<ngraph::opset1::Constant>(element::i64, Shape{ axes.size() }, axes));
+    unsqueeze->set_friendly_name("output");
+
     ngraph::ResultVector results{ std::make_shared<ngraph::opset1::Result>(unsqueeze) };
     return std::make_shared<ngraph::Function>(results, ngraph::ParameterVector{ input }, "UnsqueezeTransformation");
 }
@@ -95,6 +99,7 @@ std::shared_ptr<ngraph::Function> UnsqueezeFunction::getReference(
             input,
             std::make_shared<ngraph::opset1::Parameter>(values.activationPrecision, ngraph::Shape(inputShape))));
     }
+    multiply->set_friendly_name("output");
 
     ngraph::ResultVector results{ std::make_shared<ngraph::opset1::Result>(multiply) };
     return std::make_shared<ngraph::Function>(results, ngraph::ParameterVector{ input }, "UnsqueezeTransformation");
