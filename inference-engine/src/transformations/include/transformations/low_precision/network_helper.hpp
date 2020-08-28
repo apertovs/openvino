@@ -249,7 +249,7 @@ template <typename T, typename... Args>
 std::shared_ptr<T> make_dequantization_operation(Args&&... args) {
     std::shared_ptr<ngraph::Node> operation = std::make_shared<T>(std::forward<Args>(args)...);
     auto& rtInfo = operation->get_rt_info();
-    rtInfo["DEQUANIZATION_OPERATION"] = std::make_shared<ngraph::VariantWrapper<std::string>>("");
+    rtInfo["LPT_DEQUANTIZATION"] = std::make_shared<ngraph::VariantWrapper<std::string>>("");
     return as_type_ptr<T>(operation);
 }
 

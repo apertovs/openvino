@@ -59,7 +59,7 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
 
     auto multiply_rt_info = dequantization.multiply->get_rt_info();
 
-    if (!multiply_rt_info.count("DEQUANIZATION_OPERATION")) {
+    if (!multiply_rt_info.count("LPT_DEQUANTIZATION")) {
         return false;
     }
 
@@ -87,7 +87,6 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
 
     const Shape shape = dequantization.multiply->get_input_shape(0);
     Shape constShape = std::vector<size_t>(shape.size(), 1ul);
-    constShape[1] = shape[1];
 
     const size_t constShapeVolume = shape_size(constShape);
 
@@ -95,10 +94,6 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
         std::shared_ptr<Node> multiplyConstant = dequantization.multiply != nullptr ?
             dequantization.multiply->get_input_node_shared_ptr(1) :
             std::make_shared<opset1::Constant>(precisionAfterDequantization, constShape, std::vector<float>(constShapeVolume, 1));
-
-        multiplyConstant = fold<opset1::Broadcast>(
-            multiplyConstant,
-            std::make_shared<opset1::Constant>(element::i32, Shape{ constShape.size() }, constShape));
 
         if (lastNewPrecision != precisionAfterDequantization) {
             lastNew = std::make_shared<op::TypeRelaxed<opset1::Multiply>>(
@@ -129,12 +124,6 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
                 fold<opset1::Convert>(originalSubtractConstant, precisionAfterDequantization),
                 std::make_shared<opset1::Constant>(precisionAfterDequantization, Shape{}, std::vector<float>{ -1.f })),
             fold<opset1::Convert>(dequantization.multiply->get_input_node_shared_ptr(1), precisionAfterDequantization));
-
-        {
-            subtractConstant = fold<opset1::Broadcast>(
-                subtractConstant,
-                std::make_shared<opset1::Constant>(element::i32, Shape{ constShape.size() }, constShape));
-        }
 
         if (lastNewPrecision != precisionAfterDequantization) {
             lastNew = std::make_shared<op::TypeRelaxed<opset1::Add>>(

@@ -9,6 +9,8 @@
 #include "ngraph_functions/subgraph_builders.hpp"
 #include "transformations/low_precision/network_helper.hpp"
 
+using ngraph::pass::low_precision::make_dequantization_operation;
+
 namespace ngraph {
 namespace builder {
 namespace subgraph {
@@ -21,18 +23,18 @@ std::shared_ptr<ngraph::Function> UnsqueezeFunction::getOriginal(
     const auto input = std::make_shared<ngraph::opset1::Parameter>(values.lowPrecision, ngraph::Shape(inputShape));
     std::shared_ptr<ngraph::Node> parent = input;
 
-    const std::shared_ptr<ngraph::Node> convert = std::make_shared<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
+    const std::shared_ptr<ngraph::Node> convert = make_dequantization_operation<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
     parent = convert;
 
     if (!values.subtract.values.empty()) {
-        const std::shared_ptr<ngraph::Node> subtract = std::make_shared<ngraph::opset1::Subtract>(
+        const std::shared_ptr<ngraph::Node> subtract = make_dequantization_operation<ngraph::opset1::Subtract>(
             parent,
             std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, values.subtract.shape, values.subtract.values));
         parent = subtract;
     }
 
     if (!values.mutliply.values.empty()) {
-        const std::shared_ptr<ngraph::Node> multiply = std::make_shared<ngraph::opset1::Multiply>(
+        const std::shared_ptr<ngraph::Node> multiply = make_dequantization_operation<ngraph::opset1::Multiply>(
             parent,
             std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, values.mutliply.shape, values.mutliply.values));
         parent = multiply;
@@ -79,17 +81,17 @@ std::shared_ptr<ngraph::Function> UnsqueezeFunction::getReference(
         std::make_shared<ngraph::opset1::Constant>(element::i64, Shape{ axes.size() }, axes));
     parent = unsqueeze;
 
-    const std::shared_ptr<ngraph::Node> convert = std::make_shared<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
+    const std::shared_ptr<ngraph::Node> convert = make_dequantization_operation<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
     parent = convert;
 
     if (!values.subtract.values.empty()) {
-        const std::shared_ptr<ngraph::Node> subtract = std::make_shared<op::TypeRelaxed<ngraph::opset1::Subtract>>(
+        const std::shared_ptr<ngraph::Node> subtract = make_dequantization_operation<op::TypeRelaxed<ngraph::opset1::Subtract>>(
             parent,
             std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, values.subtract.shape, values.subtract.values));
         parent = subtract;
     }
 
-    const std::shared_ptr<ngraph::Node> multiply = std::make_shared<op::TypeRelaxed<ngraph::opset1::Multiply>>(
+    const std::shared_ptr<ngraph::Node> multiply = make_dequantization_operation<op::TypeRelaxed<ngraph::opset1::Multiply>>(
         parent,
         std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, values.mutliply.shape, values.mutliply.values));
 

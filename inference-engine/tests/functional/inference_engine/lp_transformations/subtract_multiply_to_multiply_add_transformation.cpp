@@ -62,6 +62,7 @@ public:
         SimpleLowPrecisionTransformer transform;
         transform.add<low_precision::SubtractMultiplyToMultiplyAddTransformation, ngraph::opset1::Multiply>(
             low_precision::LayerTransformation::Params(testValues.params));
+
         transform.transform(actualFunction);
 
         referenceFunction = SubtractMultiplyToMultiplyAddFunction::getReference(
@@ -108,8 +109,8 @@ const std::vector<SubtractMultiplyToMultiplyAddTransformationTestValues> testVal
             ngraph::element::f32,
             {},
             ngraph::element::f32,
-            {{0.1f, 0.1f, 0.1f}, {ngraph::element::f32}},
-            {{0.f, 0.f, 0.f}, {ngraph::element::f32}}
+            {{0.1f}, {ngraph::element::f32}, {}},
+            {{0.0f}, {ngraph::element::f32}, {}}
         },
     },
     // FP32 Subtract + Multiply {} -> Multiply + Subtract {1x3x1x1}
@@ -125,8 +126,8 @@ const std::vector<SubtractMultiplyToMultiplyAddTransformationTestValues> testVal
             ngraph::element::f32,
             {},
             ngraph::element::f32,
-            {{0.1f, 0.1f, 0.1f}, {ngraph::element::f32}},
-            {{-12.8f, -12.8f, -12.8f}, {ngraph::element::f32}}
+            {{0.1f}, {ngraph::element::f32}, {}},
+            {{-12.8f}, {ngraph::element::f32}, {}}
         },
     },
     // U8 Multiply {} -> Multiply + Subtract {1x3x1x1}
@@ -142,8 +143,8 @@ const std::vector<SubtractMultiplyToMultiplyAddTransformationTestValues> testVal
             ngraph::element::u8,
             {},
             ngraph::element::u8,
-            {{0.1f, 0.1f, 0.1f}, {ngraph::element::f32}},
-            {{0.f, 0.f, 0.f}, {ngraph::element::f32}}
+            {{0.1f}, {ngraph::element::f32}, {}},
+            {{0.f}, {ngraph::element::f32}, {}}
         },
     },
     // U8 Subtract + Multiply {} -> Multiply + Subtract {1x3x1x1}
@@ -159,8 +160,8 @@ const std::vector<SubtractMultiplyToMultiplyAddTransformationTestValues> testVal
             ngraph::element::u8,
             {},
             ngraph::element::u8,
-            {{0.1f, 0.1f, 0.1f}, {ngraph::element::f32}},
-            {{-12.8f, -12.8f, -12.8f}, {ngraph::element::f32}}
+            {{0.1f}, {ngraph::element::f32}, {}},
+            {{-12.8f}, {ngraph::element::f32}, {}}
         },
     },
     // empty

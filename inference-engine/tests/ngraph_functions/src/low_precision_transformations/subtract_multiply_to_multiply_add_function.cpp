@@ -7,6 +7,9 @@
 #include <ngraph/ngraph.hpp>
 #include <ngraph/opsets/opset1.hpp>
 #include "ngraph_functions/low_precision_transformations/common/builders.hpp"
+#include "low_precision_transformations/network_helper.hpp"
+
+using ngraph::pass::low_precision::make_dequantization_operation;
 
 namespace ngraph {
 namespace builder {
@@ -70,11 +73,20 @@ std::shared_ptr<ngraph::Function> SubtractMultiplyToMultiplyAddFunction::getRefe
     std::shared_ptr<Node> parent = dequantizationOp;
 
     if (!multiply.empty()) {
-        parent = makeElementwise<ngraph::opset1::Multiply>(parent, multiply);
+        auto constant = std::make_shared<ngraph::opset1::Constant>(multiply.outPrecision, multiply.constantShape, multiply.values);
+        parent = std::make_shared<op::TypeRelaxed<ngraph::opset1::Multiply>>(
+            std::vector<element::Type>{element::f32, element::f32}, std::vector<element::Type>{},
+            ngraph::op::TemporaryReplaceOutputType(parent, element::f32).get(),
+            ngraph::op::TemporaryReplaceOutputType(constant, element::f32).get());
     }
 
     if (!add.empty()) {
-        parent = makeElementwise<ngraph::opset1::Add>(parent, add);
+        auto constant = std::make_shared<ngraph::opset1::Constant>(add.outPrecision, add.constantShape, add.values);
+
+        parent = std::make_shared<op::TypeRelaxed<ngraph::opset1::Add>>(
+            std::vector<element::Type>{element::f32, element::f32}, std::vector<element::Type>{},
+            ngraph::op::TemporaryReplaceOutputType(parent, element::f32).get(),
+            ngraph::op::TemporaryReplaceOutputType(constant, element::f32).get());
     }
     parent->set_friendly_name("output");
 
