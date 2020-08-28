@@ -86,14 +86,8 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
         dequantization.subtract;
 
     const Shape shape = dequantization.multiply->get_input_shape(0);
-    Shape constShape = std::vector<size_t>(shape.size(), 1ul);
-
-    const size_t constShapeVolume = shape_size(constShape);
-
     {
-        std::shared_ptr<Node> multiplyConstant = dequantization.multiply != nullptr ?
-            dequantization.multiply->get_input_node_shared_ptr(1) :
-            std::make_shared<opset1::Constant>(precisionAfterDequantization, constShape, std::vector<float>(constShapeVolume, 1));
+        std::shared_ptr<Node> multiplyConstant = dequantization.multiply->get_input_node_shared_ptr(1);
 
         if (lastNewPrecision != precisionAfterDequantization) {
             lastNew = std::make_shared<op::TypeRelaxed<opset1::Multiply>>(
@@ -117,7 +111,7 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
     {
         std::shared_ptr<Node> originalSubtractConstant = dequantization.subtract != nullptr ?
             dequantization.subtract->get_input_node_shared_ptr(1) :
-            std::make_shared<opset1::Constant>(precisionAfterDequantization, constShape, std::vector<float>(constShapeVolume, 0));
+            std::make_shared<opset1::Constant>(precisionAfterDequantization, Shape{}, std::vector<float>{ 0.0f });
 
         std::shared_ptr<Node> subtractConstant = fold<opset1::Multiply>(
             fold<opset1::Multiply>(
