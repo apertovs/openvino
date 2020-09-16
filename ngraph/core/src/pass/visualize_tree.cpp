@@ -356,11 +356,12 @@ static std::string pretty_value(const vector<T>& values)
 
 std::string pass::VisualizeTree::get_constant_value(std::shared_ptr<Node> node, size_t max_elements)
 {
-    if (!op::is_constant(node))
-        return {};
     std::stringstream ss;
     ss << "{" << node->get_element_type().get_type_name() << "}";
     ss << pretty_partial_shape(node->get_output_partial_shape(0));
+
+	if (!op::is_constant(node))
+		return ss.str();
 
     ss << "\nvalue: ";
     const auto constant = as_type_ptr<op::Constant>(node);
@@ -415,15 +416,26 @@ string pass::VisualizeTree::get_attributes(shared_ptr<Node> node)
         static const bool nvtos = true;
         static const bool nvtot = true;
 
-        if (nvtos || nvtot)
-            for (const auto& output : node->outputs())
-            {
-                label << "\\n" << to_string(output.get_index()) << ": ";
-                if (nvtot)
-                    label << "{" << output.get_element_type().get_type_name() << "}";
-                if (nvtos)
-                    label << pretty_partial_shape(output.get_partial_shape());
-            }
+		if (nvtos || nvtot)
+		{
+			for (const auto& input : node->inputs())
+			{
+				label << "\\nin" << to_string(input.get_index()) << ": ";
+				if (nvtot)
+					label << "{" << input.get_element_type().get_type_name() << "}";
+				if (nvtos)
+					label << pretty_partial_shape(input.get_partial_shape());
+				label << ": " << node->get_input_node_ptr(input.get_index())->get_name() << ": out" << input.get_source_output().get_index();
+			}
+			for (const auto& output : node->outputs())
+			{
+				label << "\\nout" << to_string(output.get_index()) << ": ";
+				if (nvtot)
+					label << "{" << output.get_element_type().get_type_name() << "}";
+				if (nvtos)
+					label << pretty_partial_shape(output.get_partial_shape());
+			}
+		}
 
         auto eh = m_ops_to_details.find(node->get_type_info());
         if (eh != m_ops_to_details.end())

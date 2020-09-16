@@ -66,8 +66,7 @@ public:
 
     static std::shared_ptr<Node> swapMultiplyAndAdd(std::shared_ptr<opset1::Add> addAfterMultiply, const int multiplyBranch);
 
-    template <typename Operation1, typename Operation2>
-    static void copyInfo(const Operation1& source, Operation2& target);
+    static void copyInfo(const std::shared_ptr<Node>& source, const std::shared_ptr<Node>& target);
 
     static bool isScalarLike(std::shared_ptr<opset1::Constant> constant);
 
@@ -138,7 +137,9 @@ public:
 
     static bool checkConstantValuePrecision(const element::Type expectedPrecision, const std::shared_ptr<Node>& constant);
 
-    static size_t getInputIndex(const std::shared_ptr<ngraph::Node>& parent, const std::shared_ptr<ngraph::Node>& child);
+    static size_t getChildInputIndex(const std::shared_ptr<ngraph::Node>& parent, const std::shared_ptr<ngraph::Node>& child);
+
+    static size_t getParentOutputIndex(const std::shared_ptr<ngraph::Node>& parent, const std::shared_ptr<ngraph::Node>& child);
 
     static std::vector<Output<Node>> getInputs(const std::shared_ptr<ngraph::Node>& node);
 
@@ -159,12 +160,6 @@ private:
     // -1 - on activations
     static int onWeightsInDepth(std::shared_ptr<Node> layer);
 };
-
-template <typename Operation1, typename Operation2>
-void NetworkHelper::copyInfo(const Operation1& source, Operation2& target) {
-    copy_runtime_info(source, target);
-    target->set_friendly_name(source->get_friendly_name());
-}
 
 template <typename OperationType>
 std::shared_ptr<Node> NetworkHelper::setOutDataPrecisionForTypeRelaxed(std::shared_ptr<OperationType> layer, const element::Type& precision) {

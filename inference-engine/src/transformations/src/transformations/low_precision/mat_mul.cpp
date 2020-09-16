@@ -76,7 +76,10 @@ bool MatMulTransformation::transform(TransformationContext &context, ngraph::pat
 
     const std::shared_ptr<opset1::Multiply> newMultiply = std::make_shared<DequantizationMultiply>(
         newMatMul,
-        NetworkHelper::toScalarIfPossible(fold<ngraph::opset1::Multiply>(const1, const2)));
+        NetworkHelper::toScalarIfPossible(
+            fold<ngraph::opset1::Multiply>(
+                NetworkHelper::toScalar(as_type_ptr<opset1::Constant>(const1)),
+                const2)));
     replace_node(matMul, newMultiply);
 
     updateOutput(context, newMultiply, matMul);
@@ -106,6 +109,20 @@ bool MatMulTransformation::canBeTransformed(const TransformationContext& context
 
     if (!canSubtractBeHandled(layer)) {
         return false;
+    }
+
+    const auto dequantization1 = ngraph::pass::low_precision::NetworkHelper::getDequantization(layer);
+
+    if (!NetworkHelper::isScalarLike(
+            as_type_ptr<opset1::Constant>(dequantization1.multiply->get_input_node_shared_ptr(1)))) {
+        return false;
+    }
+
+    const auto fakeQuantize = as_type_ptr<opset1::FakeQuantize>(layer->get_input_node_shared_ptr(1));
+    if (fakeQuantize != nullptr) {
+        if (!QuantizationDetails::outputLayoutIsSupported(fakeQuantize)) {
+            return false;
+        }
     }
 
     return true;

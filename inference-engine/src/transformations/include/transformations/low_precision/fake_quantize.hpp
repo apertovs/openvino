@@ -7,11 +7,11 @@
 #include <memory>
 #include <ngraph/ngraph.hpp>
 #include "layer_transformation.hpp"
+#include "transformations/low_precision/fuse_fake_quantize.hpp"
 
 namespace ngraph {
 namespace pass {
 namespace low_precision {
-
 
 class TRANSFORMATIONS_API FakeQuantizeTransformation : public LayerTransformation {
 public:
@@ -20,6 +20,10 @@ public:
     void registerMatcherIn(GraphRewrite& pass, TransformationContext& context) const override;
     bool transform(TransformationContext& context, ngraph::pattern::Matcher &m) const override;
     bool isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept override;
+private:
+    std::shared_ptr<opset1::FakeQuantize> handle(
+        TransformationContext& context,
+        const std::shared_ptr<opset1::FakeQuantize>& fakeQuantize) const;
 };
 
 } // namespace low_precision

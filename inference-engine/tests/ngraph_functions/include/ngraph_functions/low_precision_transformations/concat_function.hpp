@@ -37,10 +37,22 @@ public:
         const FakeQuantizeOnData& fqOnData1,
         const FakeQuantizeOnData& fqOnData2);
 
+    static std::shared_ptr<ngraph::Function> getOriginalWithSplitedIntermediate(
+        const ngraph::element::Type precision,
+        const ngraph::Shape& inputShape,
+        const FakeQuantizeOnData& fqOnData1,
+        const FakeQuantizeOnData& fqOnData2);
+
     static std::shared_ptr<ngraph::Function> getOriginalSelectionWithIntermediate(
         const ngraph::element::Type precision,
         const ngraph::Shape& inputShape,
         const bool transparentIntermediate,
+        const FakeQuantizeOnData& fqOnData1,
+        const FakeQuantizeOnData& fqOnData2);
+
+    static std::shared_ptr<ngraph::Function> getOriginalWithDifferentPrecisionOnChilds(
+        const ngraph::element::Type precision,
+        const ngraph::Shape& inputShape,
         const FakeQuantizeOnData& fqOnData1,
         const FakeQuantizeOnData& fqOnData2);
 
@@ -69,10 +81,27 @@ public:
         const DequantizationOperations& dequantizationOperations1,
         const DequantizationOperations& dequantizationOperations2);
 
+    static std::shared_ptr<ngraph::Function> getReferenceWithSplitedIntermediate(
+        const ngraph::element::Type precision,
+        const ngraph::Shape& inputShape,
+        const FakeQuantizeOnData& fqOnData1,
+        const FakeQuantizeOnData& fqOnData2,
+        const DequantizationOperations& dequantizationOperations1,
+        const DequantizationOperations& dequantizationOperations2);
+
     static std::shared_ptr<ngraph::Function> getReferenceSelectionWithIntermediate(
         const ngraph::element::Type precision,
         const ngraph::Shape& inputShape,
         const bool transparentIntermediate,
+        const FakeQuantizeOnData& fqOnData1,
+        const FakeQuantizeOnData& fqOnData2,
+        const DequantizationOperations& dequantizationOperations1,
+        const DequantizationOperations& dequantizationOperations2);
+
+    static std::shared_ptr<ngraph::Function> getReferenceWithDifferentPrecisionOnChilds(
+        const ngraph::element::Type precision,
+        const ngraph::Shape& inputShape,
+        const bool multiChannel,
         const FakeQuantizeOnData& fqOnData1,
         const FakeQuantizeOnData& fqOnData2,
         const DequantizationOperations& dequantizationOperations1,

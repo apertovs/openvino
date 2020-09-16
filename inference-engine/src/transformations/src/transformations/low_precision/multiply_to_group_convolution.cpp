@@ -84,12 +84,14 @@ bool MultiplyToGroupConvolutionTransformation::transform(TransformationContext& 
         pads,
         pads,
         dilations);
+    convolution->set_friendly_name(multiply->get_friendly_name() + "/GroupConvolution");
 
     std::shared_ptr<Node> lastNode = convolution;
     if (dequantization.subtract != nullptr) {
         lastNode = std::make_shared<opset1::Add>(
             convolution,
             fold<opset1::Negative>(fold<opset1::Convert>(dequantization.subtract->get_input_node_shared_ptr(1), element::f32)));
+        lastNode->set_friendly_name(dequantization.subtract->get_friendly_name());
     }
 
     if (updatePrecisions) {
@@ -137,6 +139,17 @@ bool MultiplyToGroupConvolutionTransformation::canBeTransformed(const Transforma
         if (std::find(precisionsOnActivations.begin(), precisionsOnActivations.end(), parentPrecision) == precisionsOnActivations.end()) {
             return false;
         }
+    }
+
+    return true;
+}
+
+bool MultiplyToGroupConvolutionTransformation::isQuantized(std::shared_ptr<Node> layer) const noexcept {
+    const auto parent0 = layer->get_input_node_shared_ptr(0);
+    const auto parent1 = layer->get_input_node_shared_ptr(1);
+
+    if (!is_type<opset1::Constant>(parent0) && !is_type<opset1::Constant>(parent1)) {
+        return false;
     }
 
     return true;

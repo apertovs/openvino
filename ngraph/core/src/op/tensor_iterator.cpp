@@ -578,6 +578,7 @@ void op::v0::TensorIterator::validate_and_infer_types()
                 as_type_ptr<ConcatOutputDescription>(output_description))
         {
             auto body_value_partial_shape = body_value.get_partial_shape();
+            set_output_type(index, body_value.get_element_type(), PartialShape::dynamic());
             if (body_value_partial_shape.is_static())
             {
                 auto body_value_shape = body_value_partial_shape.to_shape();
@@ -617,6 +618,12 @@ std::shared_ptr<Node>
     op::v0::TensorIterator::clone_with_new_inputs(const OutputVector& new_args) const
 {
     auto op = make_shared<op::v0::TensorIterator>(new_args);
+    NGRAPH_CHECK(op.get(),
+                 op != nullptr,
+                 "Cannot clone ",
+                 description(),
+                 " operation with name ",
+                 get_friendly_name());
     op->set_output_size(m_output_descriptions.size());
 
     std::vector<::ngraph::element::Type> types(m_body->get_parameters().size());

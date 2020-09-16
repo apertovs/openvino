@@ -69,9 +69,9 @@ void op::MatMul::pre_validate_and_infer_types()
 #ifdef LPT_SUPPORT
     const element::Type inputElementType0 = get_input_element_type(0);
     const element::Type inputElementType1 = get_input_element_type(1);
+    element::Type result_et;
     if ((inputElementType0 != element::u8) && (inputElementType1 != element::i8))
     {
-        element::Type result_et;
         NODE_VALIDATION_CHECK(
             this,
             element::Type::merge(result_et, get_input_element_type(0), get_input_element_type(1)),
@@ -96,15 +96,27 @@ void op::MatMul::pre_validate_and_infer_types()
     const Rank& A_rank = get_input_partial_shape(0).rank();
     const Rank& B_rank = get_input_partial_shape(1).rank();
 
+#ifdef LPT_SUPPORT
     if (A_rank.is_static() && B_rank.is_static())
     {
         Rank max_rank = A_rank.get_length() > B_rank.get_length() ? A_rank : B_rank;
-#ifdef LPT_SUPPORT
-        set_output_type(0, element::f32, PartialShape::dynamic(max_rank));
-#else
-        set_output_type(0, result_et, PartialShape::dynamic(max_rank));
-#endif
+        set_output_type(0,
+                        ((inputElementType0 != element::u8) && (inputElementType1 != element::i8))
+                            ? result_et
+                            : element::f32,
+                        PartialShape::dynamic(max_rank));
     }
+#else
+    if (A_rank.is_static() && B_rank.is_static())
+    {
+        Rank max_rank = A_rank.get_length() > B_rank.get_length() ? A_rank : B_rank;
+        set_output_type(0, result_et, PartialShape::dynamic(max_rank));
+    }
+    else
+    {
+        set_output_type(0, result_et, PartialShape::dynamic());
+    }
+#endif
 }
 
 OutputVector op::MatMul::decompose_op() const
