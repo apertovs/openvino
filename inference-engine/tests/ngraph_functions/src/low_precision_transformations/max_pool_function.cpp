@@ -4,44 +4,32 @@
 
 #include "ngraph_functions/low_precision_transformations/max_pool_function.hpp"
 
-#include <ngraph/opsets/opset1.hpp>
-#include <ngraph_ops/type_relaxed.hpp>
 #include "ngraph_functions/subgraph_builders.hpp"
-#include "transformations/low_precision/network_helper.hpp"
+#include "ngraph_functions/low_precision_transformations/common/builders.hpp"
+#include "ngraph_ops/type_relaxed.hpp"
 
 namespace ngraph {
 namespace builder {
 namespace subgraph {
 
 std::shared_ptr<ngraph::Function> MaxPoolFunction::getOriginal(
-    const ngraph::element::Type originalFunctionPrecision,
     const ngraph::Shape& inputShape,
-    const ActualValues& values) {
-    const auto input = std::make_shared<ngraph::opset1::Parameter>(values.lowPrecision, ngraph::Shape(inputShape));
-    std::shared_ptr<ngraph::Node> parent = input;
+    const ngraph::element::Type precisionBeforeDequantization,
+    const ngraph::builder::subgraph::DequantizationOperations& dequantization) {
+    const std::shared_ptr<op::v0::Parameter> input = std::make_shared<ngraph::opset1::Parameter>(
+        precisionBeforeDequantization,
+        ngraph::Shape(inputShape));
 
-    const std::shared_ptr<ngraph::Node> convert = std::make_shared<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
-    parent = convert;
+    const auto dequantizationOp = makeDequantization(input, dequantization);
 
-    if (!values.subtractValues.empty()) {
-        const std::shared_ptr<ngraph::Node> subtract = std::make_shared<ngraph::opset1::Subtract>(
-            parent,
-            std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, Shape({ values.subtractValues.size() }), values.subtractValues));
-        parent = subtract;
-    }
-
-    const std::shared_ptr<ngraph::Node> multiply = std::make_shared<ngraph::opset1::Multiply>(
-        parent,
-        std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, Shape({ values.mutliplyValues.size() }), values.mutliplyValues));
-    parent = multiply;
-
-    const std::shared_ptr<ngraph::Node> maxPool = std::make_shared<ngraph::opset1::MaxPool>(
-        parent,
+    const auto maxPool = std::make_shared<ngraph::opset1::MaxPool>(
+        dequantizationOp,
         Strides{ 1, 1 },
         Shape{ 1, 1 },
         Shape{ 0, 0 },
         Shape{ 2, 2 },
         op::RoundingType::FLOOR);
+
     maxPool->set_friendly_name("output");
 
     ngraph::ResultVector results{ std::make_shared<ngraph::opset1::Result>(maxPool) };
@@ -71,41 +59,30 @@ std::shared_ptr<ngraph::Function> MaxPoolFunction::getOriginal(
 }
 
 std::shared_ptr<ngraph::Function> MaxPoolFunction::getReference(
-    const ngraph::element::Type originalFunctionPrecision,
     const ngraph::Shape& inputShape,
-    const ExpectedValues& values) {
-    auto input = std::make_shared<ngraph::opset1::Parameter>(values.activationPrecision, ngraph::Shape(inputShape));
-    std::shared_ptr<ngraph::Node> parent = input;
+    const ngraph::element::Type precisionBeforeDequantization,
+    const ngraph::builder::subgraph::DequantizationOperations& dequantizationBefore,
+    const ngraph::element::Type precisionAfterOperation,
+    const ngraph::builder::subgraph::DequantizationOperations& dequantizationAfter) {
+    const std::shared_ptr<op::v0::Parameter> input = std::make_shared<ngraph::opset1::Parameter>(
+        precisionBeforeDequantization,
+        ngraph::Shape(inputShape));
 
+    const std::shared_ptr<Node> dequantizationOpBefore = makeDequantization(input, dequantizationBefore);
     const std::shared_ptr<ngraph::Node> maxPool = std::make_shared<ngraph::opset1::MaxPool>(
-        parent,
+        dequantizationOpBefore,
         Strides{ 1, 1 },
         Shape{ 1, 1 },
         Shape{ 0, 0 },
         Shape{ 2, 2 },
         op::RoundingType::FLOOR);
-    parent = maxPool;
+    const std::shared_ptr<Node> dequantizationOpAfter = makeDequantization(maxPool, dequantizationAfter);
+    dequantizationOpAfter->set_friendly_name("output");
 
-    if (parent->get_output_element_type(0) != originalFunctionPrecision) {
-        const std::shared_ptr<ngraph::Node> convert = std::make_shared<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
-        parent = convert;
-    }
-
-    if (!values.subtractValues.empty()) {
-        const std::shared_ptr<ngraph::Node> subtract = std::make_shared<ngraph::opset1::Subtract>(
-            parent,
-            std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, Shape({ values.subtractValues.size() }), values.subtractValues));
-        parent = subtract;
-    }
-
-    const std::shared_ptr<ngraph::Node> multiply = std::make_shared<ngraph::opset1::Multiply>(
-        parent,
-        std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, Shape({ values.mutliplyValues.size() }), values.mutliplyValues));
-    multiply->set_friendly_name("output");
-
-    ngraph::ResultVector results{ std::make_shared<ngraph::opset1::Result>(multiply) };
+    ngraph::ResultVector results{ std::make_shared<ngraph::opset1::Result>(dequantizationOpAfter) };
     return std::make_shared<ngraph::Function>(results, ngraph::ParameterVector{ input }, "MaxPoolTransformation");
 }
+
 
 }  // namespace subgraph
 }  // namespace builder

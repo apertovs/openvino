@@ -179,7 +179,7 @@ std::vector<MatMullTransformationTestValues> testValues = {
             { {}, {}, { 0.02f * 0.1f } },
         }
     },
-    // FP32 & FP328
+    // FP32 & FP32
     {
         LayerTransformation::createParamsU8I8().setUpdatePrecisions(false),
         {
@@ -200,6 +200,27 @@ std::vector<MatMullTransformationTestValues> testValues = {
             { {}, {}, { 0.02f * 0.1f } },
         }
     },
+    // // FP16 & FP16
+    // {
+    //     LayerTransformation::createParamsU8I8().setUpdatePrecisions(false),
+    //     {
+    //         ngraph::element::f32,
+    //         { {}, {}, { 0.02f } },
+    //         { 2048, 1000 },
+    //         std::vector<float>(2048 * 1000, 1.f),
+    //         { 255, { 1, 1 },  {0.f}, {254.f}, {-12.7f}, {12.7} },
+    //     },
+    //     {
+    //         ngraph::element::f32,
+    //         { {}, {}, {} },
+    //         ngraph::element::f32,
+    //         {2048, 1000},
+    //         std::vector<float>(2048 * 1000, -126),
+    //         ngraph::element::f32,
+    //         ngraph::element::f32,
+    //         { {}, {}, { 0.02f * 0.1f } },
+    //     }
+    // },
 };
 
 INSTANTIATE_TEST_CASE_P(

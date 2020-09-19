@@ -4,41 +4,28 @@
 
 #include "ngraph_functions/low_precision_transformations/avg_pool_function.hpp"
 
-#include <ngraph/opsets/opset1.hpp>
-#include <ngraph_ops/type_relaxed.hpp>
 #include "ngraph_functions/subgraph_builders.hpp"
-#include "transformations/low_precision/network_helper.hpp"
+#include "ngraph_functions/low_precision_transformations/common/builders.hpp"
+#include "ngraph_ops/type_relaxed.hpp"
 
 namespace ngraph {
 namespace builder {
 namespace subgraph {
 
 std::shared_ptr<ngraph::Function> AvgPoolFunction::getOriginal(
-    const ngraph::element::Type originalFunctionPrecision,
     const ngraph::Shape& inputShape,
+    const ngraph::element::Type precisionBeforeDequantization,
+    const ngraph::builder::subgraph::DequantizationOperations& dequantization,
     const bool addFQ,
-    const std::string additionalLayer,
-    const ActualValues& values) {
-    const auto input = std::make_shared<ngraph::opset1::Parameter>(values.lowPrecision, ngraph::Shape(inputShape));
-    std::shared_ptr<ngraph::Node> parent = input;
+    const std::string& additionalLayer) {
+    const std::shared_ptr<op::v0::Parameter> input = std::make_shared<ngraph::opset1::Parameter>(
+        precisionBeforeDequantization,
+        ngraph::Shape(inputShape));
 
-    const std::shared_ptr<ngraph::Node> convert = std::make_shared<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
-    parent = convert;
+    const auto dequantizationOp = makeDequantization(input, dequantization);
 
-    if (!values.subtractValues.empty()) {
-        const std::shared_ptr<ngraph::Node> subtract = std::make_shared<ngraph::opset1::Subtract>(
-            parent,
-            std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, Shape({ values.subtractValues.size() }), values.subtractValues));
-        parent = subtract;
-    }
-
-    const std::shared_ptr<ngraph::Node> multiply = std::make_shared<ngraph::opset1::Multiply>(
-        parent,
-        std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, Shape({ values.mutliplyValues.size() }), values.mutliplyValues));
-    parent = multiply;
-
-    const std::shared_ptr<ngraph::Node> avgPool = std::make_shared<ngraph::opset1::AvgPool>(
-        parent,
+    const auto avgPool = std::make_shared<ngraph::opset1::AvgPool>(
+        dequantizationOp,
         Strides{ 1, 1 },
         Shape{ 1, 1 },
         Shape{ 0, 0 },
@@ -60,7 +47,7 @@ std::shared_ptr<ngraph::Function> AvgPoolFunction::getOriginal(
 
     if (addFQ) {
         lastLayer = ngraph::builder::makeFakeQuantize(
-            lastLayer, originalFunctionPrecision, 256, {}, { 0 }, { 255 }, { 0 }, { 255 });
+            lastLayer, precisionBeforeDequantization, 256, {}, { 0 }, { 255 }, { 0 }, { 255 });
     }
 
     lastLayer->set_friendly_name("output");
@@ -93,12 +80,16 @@ std::shared_ptr<ngraph::Function> AvgPoolFunction::getOriginal(
 }
 
 std::shared_ptr<ngraph::Function> AvgPoolFunction::getReference(
-    const ngraph::element::Type originalFunctionPrecision,
     const ngraph::Shape& inputShape,
+    const ngraph::element::Type precisionBeforeDequantization,
+    const ngraph::builder::subgraph::DequantizationOperations& dequantizationBefore,
+    const ngraph::element::Type precisionAfterOperation,
+    const ngraph::builder::subgraph::DequantizationOperations& dequantizationAfter,
     const bool addFQ,
-    const std::string additionalLayer,
-    const ExpectedValues& values) {
-    auto input = std::make_shared<ngraph::opset1::Parameter>(values.activationPrecision, ngraph::Shape(inputShape));
+    const std::string additionalLayer) {
+    const std::shared_ptr<op::v0::Parameter> input = std::make_shared<ngraph::opset1::Parameter>(
+        precisionBeforeDequantization,
+        ngraph::Shape(inputShape));
     std::shared_ptr<ngraph::Node> parent = input;
 
     const std::shared_ptr<ngraph::Node> avgPool = std::make_shared<ngraph::op::TypeRelaxed<ngraph::opset1::AvgPool>>(
@@ -109,7 +100,7 @@ std::shared_ptr<ngraph::Function> AvgPoolFunction::getReference(
         Shape{ 2, 2 },
         true,
         op::RoundingType::FLOOR);
-    const auto avgPoolPrecision = addFQ ? originalFunctionPrecision : values.activationPrecision;
+    const auto avgPoolPrecision = addFQ ? precisionAfterOperation : precisionBeforeDequantization;
     ngraph::pass::low_precision::NetworkHelper::setOutDataPrecisionForTypeRelaxed(avgPool, avgPoolPrecision);
 
     parent = avgPool;
@@ -124,28 +115,21 @@ std::shared_ptr<ngraph::Function> AvgPoolFunction::getReference(
             op::RoundingType::FLOOR);
     }
 
-    if (avgPoolPrecision != originalFunctionPrecision) {
-        const std::shared_ptr<ngraph::Node> convert = std::make_shared<ngraph::opset1::Convert>(parent, originalFunctionPrecision);
-        parent = convert;
+    const std::shared_ptr<Node> dequantizationOpBefore = makeDequantization(parent, dequantizationBefore);
+    std::shared_ptr<Node> dequantizationOpAfter;
+    if (addFQ) {
+        ngraph::builder::subgraph::DequantizationOperations dequantizationAfterModified = dequantizationAfter;
+        dequantizationAfterModified.convert = {};
+        dequantizationOpAfter = makeDequantization(dequantizationOpBefore, dequantizationAfterModified);
+    } else {
+        dequantizationOpAfter = makeDequantization(dequantizationOpBefore, dequantizationAfter);
     }
 
-    if (!values.subtractValues.empty()) {
-        const std::shared_ptr<ngraph::Node> subtract = std::make_shared<ngraph::op::TypeRelaxed<ngraph::opset1::Subtract>>(
-            parent,
-            std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, Shape({ values.subtractValues.size() }), values.subtractValues));
-
-        parent = subtract;
-    }
-
-    const std::shared_ptr<ngraph::Node> multiply = std::make_shared<ngraph::op::TypeRelaxed<ngraph::opset1::Multiply>>(
-        parent,
-        std::make_shared<ngraph::opset1::Constant>(originalFunctionPrecision, Shape({ values.mutliplyValues.size() }), values.mutliplyValues));
-
-    std::shared_ptr<Node> lastLayer = multiply;
+    std::shared_ptr<Node> lastLayer = dequantizationOpAfter;
 
     if (addFQ) {
         lastLayer = ngraph::builder::makeFakeQuantize(
-            lastLayer, originalFunctionPrecision, 256, {}, { 0 }, { 255 }, { 0 }, { 255 });
+            lastLayer, precisionBeforeDequantization, 256, {}, { 0 }, { 255 }, { 0 }, { 255 });
     }
 
     lastLayer->set_friendly_name("output");

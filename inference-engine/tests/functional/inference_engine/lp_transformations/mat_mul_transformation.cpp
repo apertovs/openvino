@@ -257,7 +257,62 @@ std::vector<MatMullTransformationTestValues> testValues = {
             ngraph::element::f32,
             { {}, {}, { 0.02f * 0.03f } },
         }
-    }
+    },
+    // start fp 16
+    // {
+    //     LayerTransformation::createParamsU8U8().setSupportAsymmetricQuantization(false),
+    //     {
+    //         ngraph::element::f16,
+    //         { ngraph::element::f32, {}, { 0.02f } },
+    //         ngraph::element::i8,
+    //         { ngraph::element::f32, {}, { 0.03f } },
+    //     },
+    //     {
+    //         ngraph::element::f16,
+    //         { {}, {}, {} },
+    //         ngraph::element::i8,
+    //         { {}, {}, {} },
+    //         ngraph::element::f16,
+    //         ngraph::element::i8,
+    //         { {}, {}, { 0.02f * 0.03f } },
+    //     }
+    // },
+    // {
+    //     LayerTransformation::createParamsU8U8(),
+    //     {
+    //         ngraph::element::u8,
+    //         { ngraph::element::f32, {}, { 0.02f } },
+    //         ngraph::element::f16,
+    //         { ngraph::element::f32, {}, { 0.03f } },
+    //     },
+    //     {
+    //         ngraph::element::u8,
+    //         { {}, {}, {} },
+    //         ngraph::element::f16,
+    //         { {}, {}, {} },
+    //         ngraph::element::u8,
+    //         ngraph::element::f16,
+    //         { {}, {}, { 0.02f * 0.03f } },
+    //     }
+    // },
+    // {
+    //     LayerTransformation::createParamsU8U8(),
+    //     {
+    //         ngraph::element::f16,
+    //         { ngraph::element::f32, {}, { 0.02f } },
+    //         ngraph::element::f16,
+    //         { ngraph::element::f32, {}, { 0.03f } },
+    //     },
+    //     {
+    //         ngraph::element::f16,
+    //         { {}, {}, {} },
+    //         ngraph::element::f16,
+    //         { {}, {}, {} },
+    //         ngraph::element::f16,
+    //         ngraph::element::f16,
+    //         { {}, {}, { 0.02f * 0.03f } },
+    //     }
+    // }
 };
 
 INSTANTIATE_TEST_CASE_P(

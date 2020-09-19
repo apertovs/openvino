@@ -24,13 +24,25 @@ using namespace ngraph::pass;
 
 class AvgPoolTransformationTestValues {
 public:
-    low_precision::LayerTransformation::Params params;
-    std::vector<float> subtractValues;
-    std::vector<float> mutliplyValues;
+    class Actual {
+    public:
+        ngraph::element::Type precisionBeforeDequantization;
+        ngraph::builder::subgraph::DequantizationOperations dequantization;
+    };
+
+    class Expected {
+    public:
+        ngraph::element::Type precisionBeforeDequantization;
+        ngraph::builder::subgraph::DequantizationOperations dequantizationBefore;
+        ngraph::element::Type precisionAfterOperation;
+        ngraph::builder::subgraph::DequantizationOperations dequantizationAfter;
+    };
+    ngraph::pass::low_precision::LayerTransformation::Params params;
+    Actual actual;
+    Expected expected;
 };
 
 typedef std::tuple<
-    ngraph::element::Type,
     ngraph::Shape,
     bool, // additional FakeQuantize After
     std::string, // additional layer before FQ
@@ -39,22 +51,17 @@ typedef std::tuple<
 class AvgPoolTransformation : public LayerTransformation, public testing::WithParamInterface<AvgPoolTransformationParams> {
 public:
     void SetUp() override {
-        const ngraph::element::Type precision = std::get<0>(GetParam());
-        const ngraph::Shape shape = std::get<1>(GetParam());
-        const bool addFQ = std::get<2>(GetParam());
-        const std::string additionalLayer = std::get<3>(GetParam());
-        const AvgPoolTransformationTestValues testValues = std::get<4>(GetParam());
+        const ngraph::Shape shape = std::get<0>(GetParam());
+        const bool addFQ = std::get<1>(GetParam());
+        const std::string additionalLayer = std::get<2>(GetParam());
+        const AvgPoolTransformationTestValues testValues = std::get<3>(GetParam());
 
         actualFunction = ngraph::builder::subgraph::AvgPoolFunction::getOriginal(
-            precision,
             shape,
+            testValues.actual.precisionBeforeDequantization,
+            testValues.actual.dequantization,
             addFQ,
-            additionalLayer,
-            {
-                testValues.params.updatePrecisions ? testValues.params.precisionsOnActivations[0] : precision,
-                testValues.subtractValues,
-                testValues.mutliplyValues
-            });
+            additionalLayer);
 
         SimpleLowPrecisionTransformer transform;
         transform.add<ngraph::pass::low_precision::AvgPoolTransformation, ngraph::opset1::AvgPool>(testValues.params);
@@ -62,33 +69,39 @@ public:
         transform.transform(actualFunction);
 
         referenceFunction = ngraph::builder::subgraph::AvgPoolFunction::getReference(
-            precision,
             shape,
+            testValues.expected.precisionBeforeDequantization,
+            testValues.expected.dequantizationBefore,
+            testValues.expected.precisionAfterOperation,
+            testValues.expected.dequantizationAfter,
             addFQ,
-            additionalLayer,
-            {
-                testValues.params.updatePrecisions ? testValues.params.precisionsOnActivations[0] : precision,
-                testValues.subtractValues,
-                testValues.mutliplyValues
-            });
+            additionalLayer);
     }
 
     static std::string getTestCaseName(testing::TestParamInfo<AvgPoolTransformationParams> obj) {
-        const ngraph::element::Type precision = std::get<0>(obj.param);
-        const ngraph::Shape shape = std::get<1>(obj.param);
-        const bool addFQ = std::get<2>(obj.param);
-        const std::string additionalLayer = std::get<3>(obj.param);
-        const AvgPoolTransformationTestValues testValues = std::get<4>(obj.param);
-        return LayerTransformation::getTestCaseNameByParams(precision, shape, testValues.params) +
-            (addFQ ? "_FQ_after_" : "_") + (additionalLayer);
+        const ngraph::Shape shape = std::get<0>(obj.param);
+        const bool addFQ = std::get<1>(obj.param);
+        const std::string additionalLayer = std::get<2>(obj.param);
+        const AvgPoolTransformationTestValues testValues = std::get<3>(obj.param);
+        std::ostringstream result;
+        result <<
+            shape << "_" <<
+            addFQ << "_" <<
+            additionalLayer << "_" <<
+            testValues.actual.precisionBeforeDequantization << "_" <<
+            testValues.actual.dequantization << "_" <<
+            testValues.expected.dequantizationBefore << "_" <<
+            testValues.expected.dequantizationAfter << "_" <<
+            testValues.expected.precisionAfterOperation << "_" <<
+            testValues.expected.precisionBeforeDequantization;
+        return result.str();
     }
 };
 
 TEST_P(AvgPoolTransformation, CompareFunctions) {
-    InitNodeInfo().run_on_function(actualFunction);
     actualFunction->validate_nodes_and_infer_types();
 
-    auto res = compare_functions(referenceFunction, actualFunction, true, true);
+    auto res = compare_functions(referenceFunction, actualFunction, true, true, true);
     ASSERT_TRUE(res.first) << res.second;
 }
 
@@ -112,16 +125,119 @@ const std::vector<ngraph::Shape> shapes = {
 };
 
 const std::vector<AvgPoolTransformationTestValues> testValues = {
-    { LayerTransformation::createParamsU8I8(), { 128 }, { 0.02f } },
-    { LayerTransformation::createParamsU8I8().setUpdatePrecisions(false), { 128 }, { 0.02f } },
-    { LayerTransformation::createParamsI8I8(), { 128 }, { 0.02f } },
+    {
+        LayerTransformation::createParamsU8I8().setSupportAsymmetricQuantization(false), // Layer params
+        /* Actual */
+        {
+            ngraph::element::u8, // Precision before dequantization
+            /* Dequantization */
+            {
+                {ngraph::element::f32}, // Convert
+                { 128.0f }, // Subtract
+                { 0.02f } // Multiply
+            }
+        },
+        /* Expected */
+        {
+            ngraph::element::u8, // Precision before dequantization
+            /* Dequantization before */
+            {},
+            ngraph::element::f32, // Precision after dequantization
+            /* Dequantization after */
+            {
+                { ngraph::element::f32 }, // Convert
+                { 128.0f }, // Subtract
+                { 0.02f } // Multiply
+            }
+        }
+    },
+    {
+        LayerTransformation::createParamsU8I8().setSupportAsymmetricQuantization(true), // Layer params
+
+        /* Actual */
+        {
+            ngraph::element::i8, // Precision before dequantization
+            /* Dequantization */
+            {
+                {ngraph::element::f32}, // Convert
+                {}, // Subtract
+                { 0.02f } // Multiply
+            }
+        },
+        /* Expected */
+        {
+            ngraph::element::i8, // Precision before dequantization
+            /* Dequantization before */
+            {},
+            ngraph::element::f32, // Precision after dequantization
+            /* Dequantization after */
+            {
+                {ngraph::element::f32}, // Convert
+                {}, // Subtract
+                { 0.02f } // Multiply
+            }
+        }
+    },
+    {
+        LayerTransformation::createParamsU8I8().setSupportAsymmetricQuantization(false).setUpdatePrecisions(false), // Layer params
+
+        /* Actual */
+        {
+            ngraph::element::f32, // Precision before dequantization
+            /* Dequantization */
+            {
+                {}, // Convert
+                { 128.0f }, // Subtract
+                { 0.02f } // Multiply
+            }
+        },
+        /* Expected */
+        {
+            ngraph::element::f32, // Precision before dequantization
+            /* Dequantization before */
+            {},
+            ngraph::element::f32, // Precision after dequantization
+            /* Dequantization after */
+            {
+                {}, // Convert
+                { 128.0f }, // Subtract
+                { 0.02f } // Multiply
+            }
+        }
+    },
+    {
+        LayerTransformation::createParamsU8I8().setSupportAsymmetricQuantization(true), // Layer params
+
+        /* Actual */
+        {
+            ngraph::element::f32, // Precision before dequantization
+            /* Dequantization */
+            {
+                {}, // Convert
+                {0.5f}, // Subtract
+                {2.0f} // Multiply
+            }
+        },
+        /* Expected */
+        {
+            ngraph::element::f32, // Precision before dequantization
+            /* Dequantization before */
+            {},
+            ngraph::element::f32, // Precision after dequantization
+            /* Dequantization after */
+            {
+                {}, // Convert
+                {0.5f}, // Subtract
+                {2.0f} // Multiply
+            }
+        }
+    },
 };
 
 INSTANTIATE_TEST_CASE_P(
     LPT,
     AvgPoolTransformation,
     ::testing::Combine(
-        ::testing::ValuesIn(precisions),
         ::testing::ValuesIn(shapes),
         ::testing::ValuesIn(addFQ),
         ::testing::ValuesIn(additionalLayer),
