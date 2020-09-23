@@ -56,6 +56,10 @@ bool FakeQuantizeTransformation::transform(TransformationContext& context, ngrap
                     break;
                 }
             }
+
+            if (!nextOpearionsWillBeNotHandled) {
+                break;
+            }
         }
 
         if (nextOpearionsWillBeNotHandled) {
@@ -111,6 +115,7 @@ bool FakeQuantizeTransformation::transform(TransformationContext& context, ngrap
 
     std::shared_ptr<ngraph::Node> dequantize = std::get<1>(QDQ);
     updateOutput(context, dequantize, layer);
+
     return true;
 }
 
@@ -190,12 +195,30 @@ std::shared_ptr<opset1::FakeQuantize> FakeQuantizeTransformation::handle(
             constant :
             fold<opset1::Convert>(constant, eltwise->get_output_element_type(0));
 
+        const auto valueVec = as_type_ptr<opset1::Constant>(value)->cast_vector<float>();
+        // TODO: temporary fix for GPU Plugin (inverted intervals)
+        for (const float& val : valueVec) {
+            if (val < 0) {
+                return nullptr;
+            }
+        }
+
         inputLowConst = updateShape(fold<opset1::Divide>(inputLowConst, value), fakeQuantize->get_output_shape(0));
         inputHightConst = updateShape(fold<opset1::Divide>(inputHightConst, value), fakeQuantize->get_output_shape(0));
+
+
     } else if (is_type<opset1::Divide>(eltwise) && eltwiseWithConstant(eltwise)) {
         const auto value = constant->get_output_element_type(0) == eltwise->get_output_element_type(0) ?
             constant :
             fold<opset1::Convert>(constant, eltwise->get_output_element_type(0));
+
+        const auto valueVec = as_type_ptr<opset1::Constant>(value)->cast_vector<float>();
+        // TODO: temporary fix for GPU Plugin (inverted intervals)
+        for (const float& val : valueVec) {
+            if (val < 0) {
+                return nullptr;
+            }
+        }
 
         inputLowConst = updateShape(fold<opset1::Multiply>(inputLowConst, value), fakeQuantize->get_output_shape(0));
         inputHightConst = updateShape(fold<opset1::Multiply>(inputHightConst, value), fakeQuantize->get_output_shape(0));

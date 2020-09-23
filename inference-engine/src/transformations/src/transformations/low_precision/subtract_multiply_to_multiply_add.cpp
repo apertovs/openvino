@@ -97,10 +97,8 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
         lastNewPrecision = precisionAfterDequantization;
     }
 
-    {
-        std::shared_ptr<Node> originalSubtractConstant = dequantization.subtract != nullptr ?
-            dequantization.subtract->get_input_node_shared_ptr(1) :
-            std::make_shared<opset1::Constant>(precisionAfterDequantization, Shape{}, std::vector<float>{0.f});
+    if (dequantization.subtract != nullptr) {
+        std::shared_ptr<Node> originalSubtractConstant = dequantization.subtract->get_input_node_shared_ptr(1);
 
         std::shared_ptr<Node> subtractConstant = fold<opset1::Multiply>(
             fold<opset1::Multiply>(
@@ -127,12 +125,8 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
             lastNew = std::make_shared<DequantizationAdd>(lastNew, subtractConstant);
         }
 
-        if (dequantization.subtract != nullptr) {
-            auto lastNewPtr = lastNew.get_node_shared_ptr();
-            NetworkHelper::copyInfo(dequantization.subtract, lastNewPtr);
-        } else {
-            lastNew.get_node_shared_ptr()->set_friendly_name(dequantization.multiply->get_friendly_name() + "/Add");
-        }
+        auto lastNewPtr = lastNew.get_node_shared_ptr();
+        NetworkHelper::copyInfo(dequantization.subtract, lastNewPtr);
 
         lastNewPrecision = precisionAfterDequantization;
     }
@@ -149,9 +143,7 @@ bool SubtractMultiplyToMultiplyAddTransformation::transform(TransformationContex
 
 bool SubtractMultiplyToMultiplyAddTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> op) const {
     FakeQuantizeDequantization dequantization = get(op);
-    if (dequantization.empty() ||
-        (dequantization.multiply == nullptr) ||
-        is_type<opset1::FakeQuantize>(dequantization.data.get_node_shared_ptr())) {
+    if (dequantization.empty() || (dequantization.multiply == nullptr) || is_type<opset1::FakeQuantize>(dequantization.data.get_node_shared_ptr())) {
         return false;
     }
 
@@ -160,34 +152,9 @@ bool SubtractMultiplyToMultiplyAddTransformation::canBeTransformed(const Transfo
         return false;
     }
 
-    // TODO: check if Convert & Subtract & Multiply are LPT dequantization operations
-
-    if (op->get_output_shape(0).size() < 4ul) {
-        return false;
-    }
-
-    // TODO: check if dequantization operations have appropriate Shape for ScaleShift
-    auto isSupportedByScaleShift = [](const std::shared_ptr<Node> eltwise) -> bool {
-        const ngraph::PartialShape constPartialShape = eltwise->get_input_partial_shape(1);
-        if (constPartialShape.is_dynamic()) {
-            return false;
-        }
-
-        const ngraph::Shape constShape = constPartialShape.to_shape();
-        if ((constShape.size() == 0ul) || (constShape.size() == 1ul)) {
-            return true;
-        }
-
-        if (constShape.size() < 4ul) {
-            return false;
-        }
-
-        return shape_size(constShape) == constShape[1];
-    };
-
     return
-        ((dequantization.subtract == nullptr) || isSupportedByScaleShift(dequantization.subtract)) &&
-        isSupportedByScaleShift(dequantization.multiply);
+        ((dequantization.subtract == nullptr) || FakeQuantizeDequantization::checkElementwise(dequantization.subtract)) &&
+        FakeQuantizeDequantization::checkElementwise(dequantization.multiply);
 }
 
 bool SubtractMultiplyToMultiplyAddTransformation::isPrecisionPreserved(std::shared_ptr<Node> layer) const noexcept {

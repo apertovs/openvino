@@ -51,8 +51,11 @@ bool MultiplyTransformation::transform(TransformationContext& context, ngraph::p
     if (fullPathIndex == -1) {
         const auto multiplyBranch = getMultiplyConstBranch(multiply);
 
-        if (multiplyBranch.first == -1 || multiplyBranch.second == -1)
+        if (multiplyBranch.first == -1 || multiplyBranch.second == -1) {
+            NetworkHelper::foldDequantization(multiply, 0);
+            NetworkHelper::foldDequantization(multiply, 1);
             return false;
+        }
 
         auto multiplyParent = multiply->get_input_node_shared_ptr(multiplyBranch.first);
         auto constParent = multiply->get_input_node_shared_ptr(multiplyBranch.first == 0 ? 1 : 0);
@@ -71,7 +74,13 @@ bool MultiplyTransformation::transform(TransformationContext& context, ngraph::p
         const int emptyPathIndex = fullPathIndex == 0 ? 1 : 0;
 
         FakeQuantizeDequantization dequantizationEmptyPath = NetworkHelper::getDequantization(multiply, emptyPathIndex);
-        if (dequantizationEmptyPath.multiply == nullptr && dequantizationEmptyPath.subtract == nullptr) {
+        if ((updatePrecisions && !dequantizationEmptyPath.empty() && !dequantizationEmptyPath.isLowPrecision()) ||
+            (dequantizationEmptyPath.multiply == nullptr && dequantizationEmptyPath.subtract == nullptr)) {
+            return false;
+        }
+
+        FakeQuantizeDequantization dequantizationFullPath = NetworkHelper::getDequantization(multiply, fullPathIndex);
+        if (updatePrecisions && !dequantizationFullPath.empty() && !dequantizationFullPath.isLowPrecision()) {
             return false;
         }
 
@@ -84,7 +93,6 @@ bool MultiplyTransformation::transform(TransformationContext& context, ngraph::p
             return false;
         }
 
-        FakeQuantizeDequantization dequantizationFullPath = NetworkHelper::getDequantization(multiply, fullPathIndex);
         std::shared_ptr<Node> subtractValuesFullPath;
         std::shared_ptr<Node> multiplyValuesFullPath;
         std::tie(subtractValuesFullPath, multiplyValuesFullPath) = NetworkHelper::createEmptyValues(dequantizationFullPath);
