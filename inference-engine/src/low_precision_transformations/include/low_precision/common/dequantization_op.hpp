@@ -13,6 +13,8 @@
 #include <ngraph/check.hpp>
 #include <ngraph/opsets/opset1.hpp>
 
+#include <low_precision/network_helper.hpp>
+
 #include "transformations_visibility.hpp"
 #include "transformations/rt_info/dequantization_attribute.hpp"
 
@@ -63,6 +65,19 @@ void copyRuntimeInfo(const ngraph::Node& from, ngraph::Node& to) {
 
 } // namespace
 
+inline void checkScalarShape(const std::shared_ptr<opset1::Constant>& constant) {
+    if (NetworkHelper::isScalarLike(constant)) {
+        auto shape = constant->get_shape();
+        for (const auto &val : shape) {
+            if (val != 1) {
+                std::cout << "Scalar " << constant->get_friendly_name() << " with non-scalarlike shape: " << shape << std::endl;
+                return;
+            }
+        }
+    }
+}
+
+
 class TRANSFORMATIONS_API DequantizationConvert : public ngraph::opset1::Convert {
 public:
     DequantizationConvert(const ngraph::Output<Node>& arg, const ngraph::element::Type& destination_type) :
@@ -84,6 +99,12 @@ public:
         const ngraph::Output<Node>& arg1,
         const ngraph::op::AutoBroadcastSpec& auto_broadcast = ngraph::op::AutoBroadcastSpec(ngraph::op::AutoBroadcastType::NUMPY)) :
         ngraph::opset1::Subtract(arg0, arg1, auto_broadcast) {
+        std::shared_ptr<Node> node0 = arg0.get_node_shared_ptr();
+        std::shared_ptr<Node> node1 = arg1.get_node_shared_ptr();
+
+        std::shared_ptr<opset1::Constant> constant = as_type_ptr<opset1::Constant>(node0) ?
+                                                     as_type_ptr<opset1::Constant>(node0) : as_type_ptr<opset1::Constant>(node1);
+        checkScalarShape(constant);
         initRuntimeInfo(*this);
     }
 
@@ -101,6 +122,13 @@ public:
         const Output<Node>& arg1,
         const ngraph::op::AutoBroadcastSpec& auto_broadcast = ngraph::op::AutoBroadcastSpec(ngraph::op::AutoBroadcastType::NUMPY)) :
         ngraph::opset1::Multiply(arg0, arg1, auto_broadcast) {
+        std::shared_ptr<Node> node0 = arg0.get_node_shared_ptr();
+        std::shared_ptr<Node> node1 = arg1.get_node_shared_ptr();
+
+        std::shared_ptr<opset1::Constant> constant = as_type_ptr<opset1::Constant>(node0) ?
+                                                     as_type_ptr<opset1::Constant>(node0) : as_type_ptr<opset1::Constant>(node1);
+        checkScalarShape(constant);
+
         initRuntimeInfo(*this);
     }
 
@@ -123,6 +151,12 @@ public:
         const ngraph::Output<Node>& arg1,
         const ngraph::op::AutoBroadcastSpec& auto_broadcast = ngraph::op::AutoBroadcastSpec(ngraph::op::AutoBroadcastType::NUMPY)) :
         ngraph::opset1::Add(arg0, arg1, auto_broadcast) {
+        std::shared_ptr<Node> node0 = arg0.get_node_shared_ptr();
+        std::shared_ptr<Node> node1 = arg1.get_node_shared_ptr();
+
+        std::shared_ptr<opset1::Constant> constant = as_type_ptr<opset1::Constant>(node0) ?
+                                                     as_type_ptr<opset1::Constant>(node0) : as_type_ptr<opset1::Constant>(node1);
+        checkScalarShape(constant);
         initRuntimeInfo(*this);
     }
 
